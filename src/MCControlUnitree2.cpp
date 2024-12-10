@@ -51,14 +51,14 @@ MCControlUnitree2::MCControlUnitree2(mc_control::MCGlobalController & controller
     mc_rtc::log::info("[mc_unitree] Connecting to {} robot on {}",
                       robot_name, config_param_.network_);
     
-    robot_ = new Go2Control(&robot, config_param_);
+    robot_ = new RobotControl(&robot, config_param_);
   }
   else
   {
     mc_rtc::log::info("[mc_unitree] Running simulation only. No connection to real robot");
     
     /* Set start state values */
-    robot_ = new Go2Control(&robot, config_param_, host);
+    robot_ = new RobotControl(&robot, config_param_, host);
     robot_->setStartState(robot.stance(), state_);
   }
   
@@ -224,8 +224,11 @@ void MCControlUnitree2::addLogEntryRobotInfo()
   /* Angular velocity */
   logger_.addLogEntry("measured_imu_rate", [this]() -> const Eigen::Vector3d & { return state_.rateIn_; });
   /* Foot force sensors */
-  logger_.addLogEntry("measured_foot_force", [this]() -> const std::array<double, 4> & { return state_.footForceIn_; });
-
+  if (!state_.footForceIn_.empty())
+  {
+    logger_.addLogEntry("measured_foot_force", [this]() -> const std::vector<double> & { return state_.footForceIn_; });
+  }
+  
   /* Command data to send to the robot */
   /* Position(Angle) values */
   logger_.addLogEntry("sent_joint_position", [this]() -> const std::vector<double> & { return cmdData_.qOut_; });

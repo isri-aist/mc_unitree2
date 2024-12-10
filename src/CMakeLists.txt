@@ -6,14 +6,14 @@ find_package(Boost REQUIRED COMPONENTS program_options)
 #find_package(mc_go2 REQUIRED)
 
 set(HEADERS
-  Go2Control.h
+  RobotControl.h
   MCControlUnitree2.h
   ControlMode.h
 )
 
 set(SOURCES
   main.cpp
-  Go2Control.cpp
+  RobotControl.cpp
   MCControlUnitree2.cpp
 )
 

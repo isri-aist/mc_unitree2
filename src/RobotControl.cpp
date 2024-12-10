@@ -1,6 +1,6 @@
 
 #include <mc_rtc/logging.h>
-#include "Go2Control.h"
+#include "RobotControl.h"
 
 namespace mc_unitree
 {
@@ -12,12 +12,13 @@ namespace mc_unitree
  *
  * @param config_param Configuration file parameters
  */
-Go2Control::Go2Control(mc_rbdyn::Robot * robot, const Go2ConfigParameter & config_param)
+RobotControl::RobotControl(mc_rbdyn::Robot * robot, const RobotConfigParameter & config_param)
   : robot_(robot)
 {
   stateIn_.qIn_.resize(robot_->refJointOrder().size());
   stateIn_.dqIn_.resize(robot_->refJointOrder().size());
   stateIn_.tauIn_.resize(robot_->refJointOrder().size());
+  stateIn_.footForceIn_.resize(robot_->forceSensors().size());
   
   /* Initialize */
   ChannelFactory::Instance()->Init(0, config_param.network_);
@@ -44,7 +45,7 @@ Go2Control::Go2Control(mc_rbdyn::Robot * robot, const Go2ConfigParameter & confi
   
   /*create subscriber*/
   lowstate_subscriber.reset(new ChannelSubscriber<unitree_go::msg::dds_::LowState_>(TOPIC_LOWSTATE));
-  lowstate_subscriber->InitChannel(std::bind(&Go2Control::LowStateMessageHandler, this, std::placeholders::_1), 1);
+  lowstate_subscriber->InitChannel(std::bind(&RobotControl::LowStateMessageHandler, this, std::placeholders::_1), 1);
 }
 
 /**
@@ -54,7 +55,7 @@ Go2Control::Go2Control(mc_rbdyn::Robot * robot, const Go2ConfigParameter & confi
  * @param config_param Configuration file parameters
  * @param host "simulation" only
  */
-Go2Control::Go2Control(mc_rbdyn::Robot * robot, const Go2ConfigParameter & config_param, const std::string & host)
+RobotControl::RobotControl(mc_rbdyn::Robot * robot, const RobotConfigParameter & config_param, const std::string & host)
   : robot_(robot)
 {
   stateIn_.qIn_.resize(robot_->refJointOrder().size());
@@ -62,12 +63,12 @@ Go2Control::Go2Control(mc_rbdyn::Robot * robot, const Go2ConfigParameter & confi
   stateIn_.tauIn_.resize(robot_->refJointOrder().size());
 }
   
-void Go2Control::LowStateMessageHandler(const void* message)
+void RobotControl::LowStateMessageHandler(const void* message)
 {
   low_state = *(unitree_go::msg::dds_::LowState_*)message;
 }
 
-uint32_t Go2Control::crc32_core(uint32_t* ptr, uint32_t len)
+uint32_t RobotControl::crc32_core(uint32_t* ptr, uint32_t len)
 {
   unsigned int xbit = 0;
   unsigned int data = 0;
@@ -105,7 +106,7 @@ uint32_t Go2Control::crc32_core(uint32_t* ptr, uint32_t len)
  * 
  * @param state Current sensor values information
  */
-void Go2Control::getState(Go2SensorInfo & state)
+void RobotControl::getState(RobotSensorInfo & state)
 {
   /*  Set current sensor values */
   for (const auto jname : robot_->refJointOrder())
@@ -116,7 +117,7 @@ void Go2Control::getState(Go2SensorInfo & state)
     state.dqIn_[jointId] = (double)motor_state.dq();
     state.tauIn_[jointId] = (double)motor_state.tau_est();
   }
-  for(int i = 0; i < 4; i++)
+  for(int i = 0; i < state.footForceIn_.size(); i++)
   {
     state.footForceIn_[i] = (double)low_state.foot_force()[i];
   }
@@ -137,8 +138,8 @@ void Go2Control::getState(Go2SensorInfo & state)
  * @param stance Value defined by RobotModule
  * @param state Current sensor values information
  */
-void Go2Control::setStartState(const std::map<std::string, std::vector<double>> & stance,
-                                   Go2SensorInfo & state)
+void RobotControl::setStartState(const std::map<std::string, std::vector<double>> & stance,
+                                   RobotSensorInfo & state)
 {
   /* Start stance */
   for (const auto jname : robot_->refJointOrder())
@@ -165,7 +166,7 @@ void Go2Control::setStartState(const std::map<std::string, std::vector<double>> 
   }
 
   /* Set foot force sensor values */
-  for(int i = 0; i < 4; i++)
+  for(int i = 0; i < state.footForceIn_.size(); i++)
   {
     state.footForceIn_[i] = 0;
   }
@@ -185,7 +186,7 @@ void Go2Control::setStartState(const std::map<std::string, std::vector<double>> 
  * @param data Command data for sending to Go2 robot
  * @param state Current sensor values information
  */
-void Go2Control::loopbackState(const Go2CommandData & data, Go2SensorInfo & state)
+void RobotControl::loopbackState(const RobotCommandData & data, RobotSensorInfo & state)
 {
   /*  Set current sensor values */
   for (const auto jname : robot_->refJointOrder())
@@ -211,7 +212,7 @@ void Go2Control::loopbackState(const Go2CommandData & data, Go2SensorInfo & stat
  * @return true Success
  * @return false Could not send
  */
-bool Go2Control::setSendCmd(const ControlMode cm, const Go2CommandData & data, bool position_only)
+bool RobotControl::setSendCmd(const ControlMode cm, const RobotCommandData & data, bool position_only)
 {
   switch(cm)
   {

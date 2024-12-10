@@ -1,5 +1,5 @@
-#ifndef _GO2CONTROL_H_
-#define _GO2CONTROL_H_
+#ifndef _ROBOT_CONTROL_H_
+#define _ROBOT_CONTROL_H_
 
 #include <chrono>
 #include <thread>
@@ -34,9 +34,9 @@ namespace mc_unitree
 /**
  * @brief Configuration file parameters for mc_unitree
  */
-struct Go2ConfigParameter
+struct RobotConfigParameter
 {
-  Go2ConfigParameter()
+  RobotConfigParameter()
   : network_(""), mode_(ControlMode::Position)
   {}
   /* Communication information with a real robot */
@@ -49,7 +49,7 @@ struct Go2ConfigParameter
 /**
  * @brief Current sensor values information of Go2 robot
  */
-struct Go2SensorInfo
+struct RobotSensorInfo
 {
   /* Position(Angle) values */
   std::vector<double> qIn_;
@@ -64,13 +64,13 @@ struct Go2SensorInfo
   /* Angular velocity */
   Eigen::Vector3d rateIn_;
   /* Foot force sensors */
-  std::array<double, 4> footForceIn_;
+  std::vector<double> footForceIn_;
 };
 
 /**
  * @brief Command data for sending to Go2 robot
  */
-struct Go2CommandData
+struct RobotCommandData
 {
   /* Position(Angle) values */
   std::vector<double> qOut_;
@@ -83,7 +83,7 @@ struct Go2CommandData
 /**
  * @brief mc_rtc control interface for Go2 robot
  */
-class Go2Control
+class RobotControl
 {
 protected:
   mc_rbdyn::Robot* robot_ = nullptr;
@@ -101,7 +101,7 @@ private:
   /* Control loop status */
   bool running_ = true;
   /* Current sensor values information */
-  Go2SensorInfo stateIn_;
+  RobotSensorInfo stateIn_;
   
   int Tpi = 0;
   int motiontime = 0;
@@ -118,7 +118,7 @@ public:
    *
    * @param config_param Configuration file parameters
    */
-  Go2Control(mc_rbdyn::Robot * robot, const Go2ConfigParameter & config_param);
+  RobotControl(mc_rbdyn::Robot * robot, const RobotConfigParameter & config_param);
 
   /**
    * @brief Interface constructor and destructor
@@ -127,9 +127,9 @@ public:
    * @param config_param Configuration file parameters
    * @param host "simulation" only
    */
-  Go2Control(mc_rbdyn::Robot * robot, const Go2ConfigParameter & config_param, const std::string & host);
+  RobotControl(mc_rbdyn::Robot * robot, const RobotConfigParameter & config_param, const std::string & host);
 
-  ~Go2Control()
+  ~RobotControl()
   {
   };
 
@@ -148,7 +148,7 @@ public:
    * 
    * @param state Current sensor values information
    */
-  void getState(Go2SensorInfo & state);
+  void getState(RobotSensorInfo & state);
 
   /**
    * @brief Set the start state values for simulation
@@ -156,7 +156,7 @@ public:
    * @param stance Value defined by RobotModule
    * @param state Current sensor values information
    */
-  void setStartState(const std::map<std::string, std::vector<double>> & stance, Go2SensorInfo & state);
+  void setStartState(const std::map<std::string, std::vector<double>> & stance, RobotSensorInfo & state);
 
   /**
    * @brief Loop back the value of "data" to "state"
@@ -164,7 +164,7 @@ public:
    * @param data Command data for sending to Go2 robot
    * @param state Current sensor values information
    */
-  void loopbackState(const Go2CommandData & data, Go2SensorInfo & state);
+  void loopbackState(const RobotCommandData & data, RobotSensorInfo & state);
 
   /**
    * @brief Set send command data to Go2 robot
@@ -175,7 +175,7 @@ public:
    * @return true Success
    * @return false Could not send
    */
-  bool setSendCmd(const ControlMode cm,const Go2CommandData & data, bool position_only);
+  bool setSendCmd(const ControlMode cm,const RobotCommandData & data, bool position_only);
 };
 
 } // namespace mc_unitree

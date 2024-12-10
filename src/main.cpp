@@ -39,7 +39,7 @@ int main(int argc, char * argv[])
   // clang-format off
   desc.add_options()
     ("help", "display help message")
-    ("host,h", po::value<std::string>(&host)->default_value("aliengo"), "connection host, robot name or \"simulation\"")
+    ("host,h", po::value<std::string>(&host)->default_value("go2"), "connection host, robot name or \"simulation\"")
     ("conf,f", po::value<std::string>(&conf_file)->default_value(check_file), "configuration file");
   // clang-format on
 

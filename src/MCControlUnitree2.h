@@ -4,7 +4,7 @@
 #include <condition_variable>
 #include <thread>
 
-#include "Go2Control.h"
+#include "RobotControl.h"
 
 namespace mc_unitree
 {
@@ -36,7 +36,7 @@ private:
 
   void addLogEntryRobotInfo();
 
-  Go2ConfigParameter config_param_;
+  RobotConfigParameter config_param_;
   
   /*LowCmd write thread*/
   ThreadPtr lowCmdWriteThreadPtr;
@@ -49,9 +49,9 @@ private:
   
   std::chrono::system_clock::time_point now_;
   
-  Go2Control * robot_;
-  Go2SensorInfo state_;
-  Go2CommandData cmdData_;
+  RobotControl * robot_;
+  RobotSensorInfo state_;
+  RobotCommandData cmdData_;
   mc_rtc::Logger logger_;
   double delay_;
   bool robotControl_ready_;
