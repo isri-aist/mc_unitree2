@@ -139,7 +139,7 @@ void RobotControl::getState(RobotSensorInfo & state)
  * @param state Current sensor values information
  */
 void RobotControl::setStartState(const std::map<std::string, std::vector<double>> & stance,
-                                   RobotSensorInfo & state)
+                                 RobotSensorInfo & state)
 {
   /* Start stance */
   for (const auto jname : robot_->refJointOrder())
@@ -267,19 +267,6 @@ bool RobotControl::setSendCmd(const ControlMode cm, const RobotCommandData & dat
     }
   }
   low_cmd.crc() = crc32_core((uint32_t *)&low_cmd, (sizeof(unitree_go::msg::dds_::LowCmd_)>>2)-1);
-  
-#if 0
-  /* Ensuring safety */
-  motiontime++;
-  if(motiontime > 10)
-  {
-    if(cm == mc_unitree::ControlMode::Position)
-    {
-      safe_->PositionLimit(low_cmd);
-    }
-    safe_->PowerProtect(low_cmd, state_, 1);
-  }
-#endif
   
 #if 0
   //printf("[send] qOut: %lf, dqOut:%lf, tauOut: %lf, q: %lf, dq: %lf, tau: %lf\n",

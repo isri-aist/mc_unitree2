@@ -13,6 +13,7 @@ set(HEADERS
 
 set(SOURCES
   main.cpp
+  rtapi.cpp
   RobotControl.cpp
   MCControlUnitree2.cpp
 )
@@ -29,6 +30,7 @@ link_directories(
 add_executable(${PROGRAM_NAME} ${SOURCES} ${HEADERS})
 target_link_libraries(${PROGRAM_NAME}
   PUBLIC
+  pthread
   mc_rtc::mc_control
   Boost::program_options
   unitree_sdk2

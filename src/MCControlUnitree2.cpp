@@ -6,6 +6,11 @@
 // mc_unitree
 #include "MCControlUnitree2.h"
 
+#if defined(ENABLE_RT_PREEMPT)
+#include <pthread.h>
+#include "rtapi.h"
+#endif
+
 namespace mc_unitree
 {
 
@@ -75,9 +80,17 @@ MCControlUnitree2::MCControlUnitree2(mc_control::MCGlobalController & controller
     try
     {
       /*loop publishing thread*/
+#if defined(ENABLE_RT_PREEMPT)
+      pthread_create(&lowCmdWriteThread, NULL,
+                     [](void* arg) -> void* {
+                       auto* ctrl = static_cast<mc_unitree::MCControlUnitree2*>(arg);
+                       ctrl->robotControlCallback();
+                       return nullptr;
+                     }, NULL);
+#else      
       lowCmdWriteThreadPtr = CreateRecurrentThreadEx("robotControl", UT_CPU_ID_NONE, (uint64_t)lround(1.0/controller.timestep()), &MCControlUnitree2::robotControlCallback, this);
       //lowCmdWriteThreadPtr = CreateRecurrentThreadEx("robotControl", UT_CPU_ID_NONE, 2000, &robotControl_callback, this);
-      
+#endif
       while(controller.running)
       {
         sleep(1);
@@ -95,19 +108,31 @@ MCControlUnitree2::MCControlUnitree2(mc_control::MCGlobalController & controller
       robotControlCallback();
     }
   }
-
+  
   mc_rtc::log::info("[mc_unitree] interface initialized");
 }
-
-
+  
+  
 /* Destructor */
 MCControlUnitree2::~MCControlUnitree2()
 {
+#if defined(ENABLE_RT_PREEMPT)
+  pthread_join(lowCmdWriteThread, NULL);
+#endif
+  
   delete robot_;
 }
 
 void MCControlUnitree2::robotControlCallback(void)
 {
+#if defined(ENABLE_RT_PREEMPT)
+  if (set_sched_prio(RT_PRIO_MAX-2, TASK_PERIOD) == -1)
+  {
+    perror("set_sched_prio failed on MCControlUnitree2.\n");
+    return;
+  } /* in art_process */
+#endif
+  
   delay_ = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - now_).count();
   now_ = std::chrono::high_resolution_clock::now();
   this->robotControl(config_param_.mode_);

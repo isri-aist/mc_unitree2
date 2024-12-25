@@ -2,9 +2,10 @@
 
 #include <mc_control/mc_global_controller.h>
 #include <condition_variable>
-#include <thread>
 
 #include "RobotControl.h"
+
+#define ENABLE_RT_PREEMPT
 
 namespace mc_unitree
 {
@@ -39,7 +40,11 @@ private:
   RobotConfigParameter config_param_;
   
   /*LowCmd write thread*/
+#if defined (ENABLE_RT_PREEMPT)
+  pthread_t lowCmdWriteThread;
+#else
   ThreadPtr lowCmdWriteThreadPtr;
+#endif
   
   /*! Global mc_rtc controller */
   mc_control::MCGlobalController & globalController_;
