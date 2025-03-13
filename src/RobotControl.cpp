@@ -15,10 +15,13 @@ namespace mc_unitree
 RobotControl::RobotControl(mc_rbdyn::Robot * robot, const RobotConfigParameter & config_param)
   : robot_(robot)
 {
-  stateIn_.qIn_.resize(robot_->refJointOrder().size());
-  stateIn_.dqIn_.resize(robot_->refJointOrder().size());
-  stateIn_.tauIn_.resize(robot_->refJointOrder().size());
-  stateIn_.footForceIn_.resize(robot_->forceSensors().size());
+  stateIn_.qIn_.resize(robot_->refJointOrder().size(), 0.0);
+  stateIn_.dqIn_.resize(robot_->refJointOrder().size(), 0.0);
+  stateIn_.tauIn_.resize(robot_->refJointOrder().size(), 0.0);
+  stateIn_.rpyIn_.setZero();
+  stateIn_.accIn_.setZero();
+  stateIn_.rateIn_.setZero();
+  stateIn_.footForceIn_.resize(robot_->forceSensors().size(), 0.0);
   
   /* Initialize */
   ChannelFactory::Instance()->Init(0, config_param.network_);
@@ -58,11 +61,15 @@ RobotControl::RobotControl(mc_rbdyn::Robot * robot, const RobotConfigParameter &
 RobotControl::RobotControl(mc_rbdyn::Robot * robot, const RobotConfigParameter & config_param, const std::string & host)
   : robot_(robot)
 {
-  stateIn_.qIn_.resize(robot_->refJointOrder().size());
-  stateIn_.dqIn_.resize(robot_->refJointOrder().size());
-  stateIn_.tauIn_.resize(robot_->refJointOrder().size());
+  stateIn_.qIn_.resize(robot_->refJointOrder().size(), 0.0);
+  stateIn_.dqIn_.resize(robot_->refJointOrder().size(), 0.0);
+  stateIn_.tauIn_.resize(robot_->refJointOrder().size(), 0.0);
+  stateIn_.rpyIn_.setZero();
+  stateIn_.accIn_.setZero();
+  stateIn_.rateIn_.setZero();
+  stateIn_.footForceIn_.resize(robot_->forceSensors().size(), 0.0);
 }
-  
+
 void RobotControl::LowStateMessageHandler(const void* message)
 {
   low_state = *(unitree_go::msg::dds_::LowState_*)message;
@@ -145,30 +152,26 @@ void RobotControl::setStartState(const std::map<std::string, std::vector<double>
   for (const auto jname : robot_->refJointOrder())
   {
     auto jointId = robot_->jointIndexByName(jname);
-    state.qIn_[jointId] = 0.0;
+    
+    if(stance.count(jname))
+    {
+      state.qIn_[jointId] = stance.at(jname)[0];
+    }
+    else
+    {
+      state.qIn_[jointId] = 0.0;
+    }
     state.dqIn_[jointId] = 0.0;
     state.tauIn_[jointId] = 0.0;
   }
-
-  /* Set position(Angle) values */
-  try
-  {
-    for (auto joint : stance)
-    {
-      if (robot_->hasJoint(joint.first))
-        state.qIn_[robot_->jointIndexByName(joint.first)] = joint.second[0];
-    }
-  }
-  catch(const std::exception& e)
-  {
-    mc_rtc::log::error("[mc_unitree] Failed to get the value defined by RobotModule: {}", e.what());
-    return;
-  }
-
+  
   /* Set foot force sensor values */
-  for(int i = 0; i < state.footForceIn_.size(); i++)
+  if (!state.footForceIn_.empty())
   {
-    state.footForceIn_[i] = 0;
+    for(int i = 0; i < state.footForceIn_.size(); i++)
+    {
+      state.footForceIn_[i] = 0;
+    }
   }
   
   /* Set body(imu) sensor values */

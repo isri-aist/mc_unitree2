@@ -1,0 +1,7 @@
+---
+# Interface specific parameters (mc_unitree2)
+Unitree:
+  h1: # Name of the robot in the controller 
+    network-interface: eth0
+  go2: # Name of the robot in the controller 
+    network-interface: eth0

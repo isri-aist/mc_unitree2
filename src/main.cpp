@@ -28,7 +28,7 @@ int main(int argc, char * argv[])
   std::string conf_file;
   std::string host;
   po::options_description desc(std::string("MCControlUnitree2 options"));
-
+  
   // Get the configuration file path dedicated to this program
   std::string check_file = mc_unitree::CONFIGURATION_FILE;
   if(!file_exists(check_file))
@@ -39,7 +39,7 @@ int main(int argc, char * argv[])
   // clang-format off
   desc.add_options()
     ("help", "display help message")
-    ("host,h", po::value<std::string>(&host)->default_value("go2"), "connection host, robot name or \"simulation\"")
+    ("host,h", po::value<std::string>(&host)->default_value("Go2"), "connection host, robot name or \"simulation\"")
     ("conf,f", po::value<std::string>(&conf_file)->default_value(check_file), "configuration file");
   // clang-format on
 

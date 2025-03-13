@@ -30,12 +30,17 @@ MCControlUnitree2::MCControlUnitree2(mc_control::MCGlobalController & controller
     return;
   }
   
-  for (size_t i = 0; i < controller.robot().refJointOrder().size(); i++)
-  {
-    cmdData_.qOut_[i] = 0.0;
-    cmdData_.dqOut_[i] = 0.0;
-    cmdData_.tauOut_[i] = 0.0;
-  }
+  state_.qIn_.resize(controller.robot().refJointOrder().size(), 0.0);
+  state_.dqIn_.resize(controller.robot().refJointOrder().size(), 0.0);
+  state_.tauIn_.resize(controller.robot().refJointOrder().size(), 0.0);
+  state_.rpyIn_.setZero();
+  state_.accIn_.setZero();
+  state_.rateIn_.setZero();
+  state_.footForceIn_.resize(controller.robot().forceSensors().size(), 0.0);
+  
+  cmdData_.qOut_.resize(controller.robot().refJointOrder().size(), 0.0);
+  cmdData_.dqOut_.resize(controller.robot().refJointOrder().size(), 0.0);
+  cmdData_.tauOut_.resize(controller.robot().refJointOrder().size(), 0.0);
   
   /* Get communication information */
   mc_rtc::Configuration config_robot = unitreeConfig(robot_name);
@@ -161,7 +166,7 @@ void MCControlUnitree2::robotControl(ControlMode cm)
     robotControl_call_count++;
     if(robotControl_call_count > 30) robotControl_ready_ = true;
   }
-
+  
   /* Send sensor readings to mc_rtc controller */
   globalController_.setEncoderValues(robot_name, state_.qIn_);
   globalController_.setEncoderVelocities(robot_name, state_.dqIn_);
@@ -169,7 +174,7 @@ void MCControlUnitree2::robotControl(ControlMode cm)
   globalController_.setSensorLinearAcceleration(robot_name, state_.accIn_);
   globalController_.setSensorOrientation(robot_name, Eigen::Quaterniond(mc_rbdyn::rpyToMat(state_.rpyIn_)));
   globalController_.setSensorAngularVelocity(robot_name, state_.rateIn_);
-
+  
   bool run_ret = true;
   if(host_ == "simulation" || robotControl_ready_)
   {

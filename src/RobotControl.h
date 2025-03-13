@@ -28,8 +28,8 @@ namespace mc_unitree
   constexpr double PosStopF = (2.146E+9f);
   constexpr double VelStopF = (16000.0f);
   
-  const std::string ROBOT_NAME = "Go2";
-  const std::string CONFIGURATION_FILE = "/usr/local/etc/mc_unitree/mc_rtc_go2.yaml";
+  const std::string ROBOT_NAME = "h1";
+  const std::string CONFIGURATION_FILE = "/usr/local/etc/mc_unitree/mc_rtc.yaml";
   
 /**
  * @brief Configuration file parameters for mc_unitree
