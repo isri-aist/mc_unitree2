@@ -1,4 +1,4 @@
-#include "MCControlUnitree2.h"
+#include "H1Control.h"
 
 #include <mc_rtc/config.h>
 
@@ -39,7 +39,7 @@ int main(int argc, char * argv[])
   // clang-format off
   desc.add_options()
     ("help", "display help message")
-    ("host,h", po::value<std::string>(&host)->default_value("Go2"), "connection host, robot name or \"simulation\"")
+    ("host,h", po::value<std::string>(&host)->default_value("H1"), "connection host, robot name or \"simulation\"")
     ("conf,f", po::value<std::string>(&conf_file)->default_value(check_file), "configuration file");
   // clang-format on
 
@@ -63,23 +63,26 @@ int main(int argc, char * argv[])
   mc_rtc::log::info("[mc_unitree] Reading additional configuration from {}", conf_file);
 
   /* Create global controller */
-  mc_control::MCGlobalController gconfig(conf_file, nullptr);
+  mc_control::MCGlobalController global_controller(conf_file, nullptr);
 
   /* Check that the interface can work with the main controller robot */
   std::string module_name;
   module_name.resize(mc_unitree::ROBOT_NAME.size());
   std::transform(mc_unitree::ROBOT_NAME.begin(), mc_unitree::ROBOT_NAME.end(), module_name.begin(), ::tolower);
-  if(gconfig.robot().name() != module_name)
+  if(global_controller.robot().name() != module_name)
   {
     mc_rtc::log::error(
         "[mc_unitree] This program can only handle '" + mc_unitree::ROBOT_NAME + "' at the moment");
     return 1;
   }
-
+  
   /* Create MCControlUnitree2 interface */
-  mc_unitree::MCControlUnitree2 mc_control_unitree(gconfig, host);
-
+  mc_unitree::MCControlUnitree2<mc_unitree::H1Control,
+                                mc_unitree::H1SensorInfo,
+                                mc_unitree::H1CommandData,
+                                mc_unitree::H1ConfigParameter> mc_control_unitree(global_controller, host);
+  
   mc_rtc::log::info("[mc_unitree] Terminated");
-
+  
   return 0;
 }
