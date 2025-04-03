@@ -22,7 +22,7 @@ public:
   /**
    * @brief Interface constructor and destructor
    */
-  MCControlUnitree2(mc_control::MCGlobalController & controller, const std::string & host);
+  MCControlUnitree2(mc_control::MCGlobalController & controller, const std::string & network);
   
   virtual ~MCControlUnitree2();
 
@@ -46,26 +46,27 @@ private:
   
   RobotConfigParameter config_param_;
   
-  RobotControl * robot_;
+  std::shared_ptr<RobotControl> robot_;
   
   /*! Global mc_rtc controller */
   mc_control::MCGlobalController & globalController_;
-    
-  /*! Connection host */
-  std::string host_;
+  
+  /*! Name of network adaptor */
+  std::string network_;
   
   std::chrono::system_clock::time_point now_;
   
-  mc_rtc::Logger logger_;
+  mc_rtc::Logger & logger_;
   double delay_;
   bool controller_init_once_;
 };
 
 
 template <typename RobotControl, typename RobotSensorInfo, typename RobotCommandData, typename RobotConfigParameter>
-MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigParameter>::MCControlUnitree2(mc_control::MCGlobalController & controller, const std::string & host)
-  : globalController_(controller), host_(host),  robot_(nullptr),
-    logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc_unitree-" + controller.robot().name()),
+MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigParameter>::MCControlUnitree2(mc_control::MCGlobalController & controller, const std::string & network)
+  : globalController_(controller), network_(network),  robot_(nullptr),
+    //logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc-unitree-"+controller.robot().name()),
+    logger_(controller.controller().logger()),
     delay_(0.0), controller_init_once_(false)
 {
   // Get parameter values from the configuration file
@@ -79,34 +80,96 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
     return;
   }
   
-  /* Get communication information */
   mc_rtc::Configuration config_robot = unitreeConfig(robot_name);
-  if(!config_robot.has("network-interface"))
+  
+  /* Get communication information */
+  if (network.empty())
   {
-    mc_rtc::log::warning("[mc_unitree]'network-interface' config entry missing");
+    if(!config_robot.has("network-interface"))
+    {
+      mc_rtc::log::info("[mc_unitree]'network-interface' config entry missing");
+      mc_rtc::log::info("[mc_unitree]'run as simulation mode");
+    }
+    else
+    {
+      config_robot("network-interface", config_param_.network_);
+    }
   }
   else
   {
-    config_robot("network-interface", config_param_.network_);
+    config_param_.network_ = network;
   }
   
   auto & robot = controller.controller().robots().robot(robot_name);
   /* Connect to robot (real or simulation) */
-  if(host != "simulation")
+  if(!config_param_.network_.empty())
   {
-    /* Try to connect via UDP to the robot */
     mc_rtc::log::info("[mc_unitree] Connecting to {} robot on {}",
                       robot_name, config_param_.network_);
-    
-    robot_ = new RobotControl(this, &robot, config_param_);
   }
   else
   {
     mc_rtc::log::info("[mc_unitree] Running simulation only. No connection to real robot");
-    
-    /* Set start state values */
-    robot_ = new RobotControl(this, &robot, config_param_, host);
   }
+  
+  if(!config_robot.has("kp"))
+  {
+    std::vector<double> kp;
+    config_robot("kp", kp);
+    
+    if (kp.size() != config_param_.kp_.size())
+    {
+      mc_rtc::log::error("[mc_unitree] Wrong size of kp {} != {}",
+                         kp.size(), config_param_.kp_.size());
+    }
+    
+    for (size_t i = 0 ; i < kp.size() ; i++)
+      config_param_.kp_(i) = kp[i];
+  }
+  if(!config_robot.has("kd"))
+  {
+    std::vector<double> kd;
+    config_robot("kd", kd);
+
+    if (kd.size() != config_param_.kd_.size())
+    {
+      mc_rtc::log::error("[mc_unitree] Wrong size of kd {} != {}",
+                         kd.size(), config_param_.kd_.size());
+    }
+    
+    for (size_t i = 0 ; i < kd.size() ; i++)
+      config_param_.kd_(i) = kd[i];
+  }
+  if(!config_robot.has("kp_wait"))
+  {
+    std::vector<double> kp;
+    config_robot("kp_wait", kp);
+    
+    if (kp.size() != config_param_.kp_stand_.size())
+    {
+      mc_rtc::log::error("[mc_unitree] Wrong size of kp_wait {} != {}",
+                         kp.size(), config_param_.kp_stand_.size());
+    }
+    
+    for (size_t i = 0 ; i < kp.size() ; i++)
+      config_param_.kp_stand_(i) = kp[i];
+  }
+  if(!config_robot.has("kd_wait"))
+  {
+    std::vector<double> kd;
+    config_robot("kd_wait", kd);
+
+    if (kd.size() != config_param_.kd_stand_.size())
+    {
+      mc_rtc::log::error("[mc_unitree] Wrong size of kd_wait {} != {}",
+                         kd.size(), config_param_.kd_stand_.size());
+    }
+    
+    for (size_t i = 0 ; i < kd.size() ; i++)
+      config_param_.kd_stand_(i) = kd[i];
+  }
+  
+  robot_ = std::make_shared<RobotControl>(this, &robot, config_param_);
   
   // create datastore calls for reading/writing servo pd gains
   controller.controller().datastore().make_call(
@@ -122,15 +185,10 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
     controller.robot().name() + "::SetPDGainsByName",
     [this](const std::string & jn, double p, double d) { return setServoGainsByName(jn, p, d); });
   
-  /* Setup log entries */
-  logger_.start(controller.current_controller(), controller.timestep());
-  addLogEntryRobotInfo();
-  logger_.addLogEntry("delay", [this]() { return delay_; });
-  
   /* Run QP (every timestep ms) and send result joint commands to the robot */
   controller.running = true;
   now_ = std::chrono::high_resolution_clock::now();
-  if(host_ != "simulation")
+  if(!config_param_.network_.empty())
   {
     try
     {
@@ -185,8 +243,6 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
 #if defined(__ENABLE_RT_PREEMPT__)
   pthread_join(lowCmdWriteThread, NULL);
 #endif
-  
-  delete robot_;
 }
 
 template <typename RobotControl, typename RobotSensorInfo, typename RobotCommandData, typename RobotConfigParameter>
@@ -231,15 +287,29 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
       }
     }
     
-    if(host_ == "simulation")
+    if(config_param_.network_.empty())
     {
       /* Loop back the value of "cmdOut" to "stateIn" */
       robot_->loopbackState(cmdData);
     }
   }
   
+  if(!controller_init_once_)
+  {
+    /* Set up interface GUI tab */
+    globalController_.init(state.qIn_);
+    globalController_.controller().gui()->addElement(
+        {"Robot"}, mc_rtc::gui::Button("Stop controller", [&]() { this->globalController_.running = false; }));
+    
+    /* Setup log entries */
+    //logger_.start(controller.current_controller(), controller.timestep());
+    addLogEntryRobotInfo();
+    
+    controller_init_once_ = true;
+  }
+  
   /* Wait until next controller run */
-  if(host_ == "simulation")
+  if(config_param_.network_.empty())
   {
     auto now = std::chrono::high_resolution_clock::now();
     double elapsed = std::chrono::duration<double>(now - start_t_).count();
@@ -256,17 +326,7 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
   }
   
   /* Print controller data to the log */
-  logger_.log();
-  
-  if(!controller_init_once_)
-  {
-    controller_init_once_ = true;
-    /* Set up interface GUI tab */
-    globalController_.init(state.qIn_);
-    globalController_.running = true;
-    globalController_.controller().gui()->addElement(
-        {"Unitree"}, mc_rtc::gui::Button("Stop controller", [&]() { this->globalController_.running = false; }));
-  }
+  //logger_.log();
 }
 
 template <typename RobotControl, typename RobotSensorInfo, typename RobotCommandData, typename RobotConfigParameter>
@@ -354,6 +414,10 @@ bool MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
 template <typename RobotControl, typename RobotSensorInfo, typename RobotCommandData, typename RobotConfigParameter>
  void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigParameter>::addLogEntryRobotInfo()
 {
+  logger_.addLogEntry("time", [this]() { return robot_->time(); });
+  logger_.addLogEntry("time_run", [this]() { return robot_->timeRun(); });
+  logger_.addLogEntry("delay", [this]() { return delay_; });
+  
   /* Sensors */
   /* Position(Angle) values */
   logger_.addLogEntry("measured_joint_position", [this]() -> const std::vector<double> & { return robot_->getState().qIn_; });
@@ -370,11 +434,11 @@ template <typename RobotControl, typename RobotSensorInfo, typename RobotCommand
   
   /* Command data to send to the robot */
   /* Position(Angle) values */
-  logger_.addLogEntry("sent_joint_position", [this]() -> const std::vector<double> & { return robot_->getCommand().qOut_; });
+  logger_.addLogEntry("command_joint_position", [this]() -> const std::vector<double> & { return robot_->getCommand().qOut_; });
   /* Velocity values */
-  logger_.addLogEntry("sent_joint_velocity", [this]() -> const std::vector<double> & { return robot_->getCommand().dqOut_; });
+  logger_.addLogEntry("command_joint_velocity", [this]() -> const std::vector<double> & { return robot_->getCommand().dqOut_; });
   /* Torque values */
-  logger_.addLogEntry("sent_joint_torque", [this]() -> const std::vector<double> & { return robot_->getCommand().tauOut_; });
+  logger_.addLogEntry("command_joint_torque", [this]() -> const std::vector<double> & { return robot_->getCommand().tauOut_; });
 }
   
 } // namespace mc_unitree

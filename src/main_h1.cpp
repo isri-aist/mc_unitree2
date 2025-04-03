@@ -26,8 +26,8 @@ int main(int argc, char * argv[])
   /* Set command line arguments options */
   /* Usage example: MCControlUnitree2 -h simulation -f @ETC_PATH@/mc_unitree/mc_rtc_xxxxx.yaml */
   std::string conf_file;
-  std::string host;
-  po::options_description desc(std::string("MCControlUnitree2 options"));
+  std::string network;
+  po::options_description desc(std::string("MCControlH1 options"));
   
   // Get the configuration file path dedicated to this program
   std::string check_file = mc_unitree::CONFIGURATION_FILE;
@@ -39,10 +39,10 @@ int main(int argc, char * argv[])
   // clang-format off
   desc.add_options()
     ("help", "display help message")
-    ("host,h", po::value<std::string>(&host)->default_value("H1"), "connection host, robot name or \"simulation\"")
+    ("network,n", po::value<std::string>(&network)->default_value("eth0"), "name of network adaptor")
     ("conf,f", po::value<std::string>(&conf_file)->default_value(check_file), "configuration file");
   // clang-format on
-
+  
   /* Parse command line arguments */
   po::variables_map vm;
   try
@@ -63,13 +63,13 @@ int main(int argc, char * argv[])
   mc_rtc::log::info("[mc_unitree] Reading additional configuration from {}", conf_file);
 
   /* Create global controller */
-  mc_control::MCGlobalController global_controller(conf_file, nullptr);
+  mc_control::MCGlobalController g_controller(conf_file, nullptr);
 
   /* Check that the interface can work with the main controller robot */
   std::string module_name;
   module_name.resize(mc_unitree::ROBOT_NAME.size());
   std::transform(mc_unitree::ROBOT_NAME.begin(), mc_unitree::ROBOT_NAME.end(), module_name.begin(), ::tolower);
-  if(global_controller.robot().name() != module_name)
+  if(g_controller.robot().name() != module_name)
   {
     mc_rtc::log::error(
         "[mc_unitree] This program can only handle '" + mc_unitree::ROBOT_NAME + "' at the moment");
@@ -80,7 +80,8 @@ int main(int argc, char * argv[])
   mc_unitree::MCControlUnitree2<mc_unitree::H1Control,
                                 mc_unitree::H1SensorInfo,
                                 mc_unitree::H1CommandData,
-                                mc_unitree::H1ConfigParameter> mc_control_unitree(global_controller, host);
+                                mc_unitree::H1ConfigParameter> mc_control_unitree(g_controller,
+                                                                                  network);
   
   mc_rtc::log::info("[mc_unitree] Terminated");
   

@@ -34,7 +34,6 @@ set(SOURCES
 if (GENERATE_GO2_CONTROLLER)
   
   set(GO2_CONTROLLER_NAME MCControlGo2)
-  
   set(GO2_HEADERS
     Go2Control.h
   )
@@ -42,15 +41,27 @@ if (GENERATE_GO2_CONTROLLER)
   set(GO2_SOURCES
     main_go2.cpp
     Go2Control.cpp
+    ${UNITREE_SDK2_SRC_DIR}/example/go2/low_level/motors.cpp
+  )
+
+  message(STATUS "unitree_sdk2 directory set to: ${UNITREE_SDK2_SRC_DIR}")
+  include_directories(
+    ${UNITREE_SDK2_SRC_DIR}/example
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libfort
   )
   
-  add_executable(${GO2_CONTROLLER_NAME} ${SOURCES} ${GO2_SOURCES} ${HEADERS} ${GO2_HEADERS})
+  add_executable(${GO2_CONTROLLER_NAME}
+    ${SOURCES}
+    ${GO2_SOURCES}
+  )
+  
   target_link_libraries(${GO2_CONTROLLER_NAME}
     PUBLIC
     pthread
     mc_rtc::mc_control
     Boost::program_options
     unitree_sdk2
+    fort
   )
   
   install(TARGETS ${GO2_CONTROLLER_NAME} DESTINATION bin)
@@ -71,7 +82,7 @@ if (GENERATE_H1_CONTROLLER)
   
   message(STATUS "unitree_sdk2 directory set to: ${UNITREE_SDK2_SRC_DIR}")
   include_directories(
-    ${UNITREE_SDK2_SRC_DIR}/example/h1/low_level
+    ${UNITREE_SDK2_SRC_DIR}/example
     ${CMAKE_CURRENT_SOURCE_DIR}/../libfort
   )
   
@@ -79,12 +90,6 @@ if (GENERATE_H1_CONTROLLER)
     ${SOURCES}
     ${H1_SOURCES}
   )
-  
-  #target_include_directories(${H1_CONTROLLER_NAME} INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/../fmtlog)
-  #target_include_directories(${H1_CONTROLLER_NAME} INTERFACE
-  #  ${UNITREE_SDK2_SRC_DIR}/example/h1/low_level
-  #  ${CMAKE_CURRENT_SOURCE_DIR}/../libfort
-  #)
   
   target_link_libraries(${H1_CONTROLLER_NAME}
     PUBLIC

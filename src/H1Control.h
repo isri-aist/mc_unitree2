@@ -23,9 +23,9 @@
 #include <unitree/idl/go2/LowCmd_.hpp>
 
 // located in unitree_sdk2/example/h1/low_level
-#include <base_state.h>
-#include <data_buffer.hpp>
-#include <motors.hpp>
+#include <h1/low_level/base_state.h>
+#include <h1/low_level/data_buffer.hpp>
+#include <h1/low_level/motors.hpp>
 
 #include <mc_control/mc_controller.h>
 #include "MCControlUnitree2.h"
@@ -76,6 +76,66 @@ struct H1ConfigParameter
   std::string network_;
   /* ControlMode : Position/Velocity/Torque (Velocity and Torque are not supported)*/
   ControlMode mode_ = ControlMode::Position;
+  
+    // Default configuration
+  // This will be overwritten by stance defined in mc_h1
+  Vector20 q_init_{
+    0.0, 0.0, -0.2,  0.6, -0.4,
+    0.0, 0.0, -0.2,  0.6, -0.4, // Legs
+    0.0, 0.4,  0.0,  0.0, -0.4,
+    0.4, 0.0,  0.0, -0.4,       // Torso and arms
+    0.0};                       // Unused joint
+  // This will be overwritten by definition in urdf
+  Vector20 q_lim_lower_{
+    -0.43, -0.43, -3.14, -0.26, -0.87,
+    -0.43, -0.43, -3.14, -0.26, -0.87, // Legs
+    -2.35, -2.87, -0.34, -1.3,  -1.25,
+    -2.87, -3.11, -4.45, -1.25, // Torso and arms
+    0.0};                       // Unused joint
+  // This will be overwritten by definition in urdf
+  Vector20 q_lim_upper_{
+    0.43, 0.43, 2.53, 2.05, 0.52,
+    0.43, 0.43, 2.53, 2.05, 0.52, // Legs
+    2.35, 2.87, 3.11, 4.45, 2.61,
+    2.87, 0.34, 1.3,  2.61, // Torso and arms
+    0.0};                   // Unused joint
+  
+  // This can be overwritten defined in mc_rtc.yaml
+  // Proportional derivative gains
+  Vector20 kp_{
+    100.0, 100.0, 100.0, 100.0, 20.0,
+    100.0, 100.0, 100.0, 100.0, 20.0, // Legs
+    300.0, 100.0, 100.0, 100.0, 100.0,
+    100.0, 100.0, 100.0, 100.0, // Torso and arms
+    0.0};                       // Unused joint
+  
+  Vector20 kd_{
+    10.0, 10.0, 10.0, 10.0, 4.0,
+    10.0, 10.0, 10.0, 10.0, 4.0, // Legs
+    6.0,  2.0,  2.0,  2.0,  2.0,
+    2.0,  2.0,  2.0,  2.0, // Torso and arms
+    0.0}; 
+  
+  Vector20 kp_stand_{
+    1500.0, 1500.0, 1500.0, 1500.0, 1500.0,
+    1500.0, 1500.0, 1500.0, 1500.0, 1500.0, // Legs
+    200.0,  200.0,  100.0,  100.0,  200.0,
+    200.0,  100.0,  100.0,  200.0, // Torso and arms
+    0.0};                          // Unused joint
+  
+  Vector20 kd_stand_{
+    25.0, 25.0, 25.0, 25.0, 25.0,
+    25.0, 25.0, 25.0, 25.0, 25.0, // Legs
+    6.0,  2.0,  2.0,  2.0,  2.0,
+    2.0,  2.0,  2.0,  2.0, // Torso and arms
+    0.0};                  // Unused joint
+  
+  Vector20 tau_ff_{
+    0.0,  6.0, -8.0, -26.0, 36.0,
+    0.0, -6.0, -8.0, -26.0, 36.0,
+    0.0,  0.0,  0.0,  0.0,  0.0,
+    0.0,  0.0,  0.0,  0.0,
+    0.0};
 };
   
 /**
@@ -157,63 +217,14 @@ private:
   std::vector<int> refJointOrderToMCJointId_;
   std::unordered_map<int, int> mcJointIdToJointId_;
   
-  // Default configuration
-  // This will be overwritten by stance defined in mc_h1
-  Vector20 q_init_{
-    0.0, 0.0, -0.2,  0.6, -0.4,
-    0.0, 0.0, -0.2,  0.6, -0.4, // Legs
-    0.0, 0.4,  0.0,  0.0, -0.4,
-    0.4, 0.0,  0.0, -0.4,       // Torso and arms
-    0.0};                       // Unused joint
-  const Vector20 q_lim_lower_{
-    -0.43, -0.43, -3.14, -0.26, -0.87,
-    -0.43, -0.43, -3.14, -0.26, -0.87, // Legs
-    -2.35, -2.87, -0.34, -1.3,  -1.25,
-    -2.87, -3.11, -4.45, -1.25, // Torso and arms
-    0.0};                       // Unused joint
-  const Vector20 q_lim_upper_{
-    0.43, 0.43, 2.53, 2.05, 0.52,
-    0.43, 0.43, 2.53, 2.05, 0.52, // Legs
-    2.35, 2.87, 3.11, 4.45, 2.61,
-    2.87, 0.34, 1.3,  2.61, // Torso and arms
-    0.0};                   // Unused joint
-  
-  // Proportional derivative gains
-  Vector20 kp_{
-    100.0, 100.0, 100.0, 100.0, 20.0,
-    100.0, 100.0, 100.0, 100.0, 20.0, // Legs
-    300.0, 100.0, 100.0, 100.0, 100.0,
-    100.0, 100.0, 100.0, 100.0, // Torso and arms
-    0.0};                       // Unused joint
-  
-  Vector20 kd_{
-    10.0, 10.0, 10.0, 10.0, 4.0,
-    10.0, 10.0, 10.0, 10.0, 4.0, // Legs
-    6.0,  2.0,  2.0,  2.0,  2.0,
-    2.0,  2.0,  2.0,  2.0, // Torso and arms
-    0.0}; 
-  
-  Vector20 kp_wait_{
-    1500.0, 1500.0, 1500.0, 1500.0, 1500.0,
-    1500.0, 1500.0, 1500.0, 1500.0, 1500.0, // Legs
-    200.0,  200.0,  100.0,  100.0,  200.0,
-    200.0,  100.0,  100.0,  200.0, // Torso and arms
-    0.0};                          // Unused joint
-  
-  Vector20 kd_wait_{
-    25.0, 25.0, 25.0, 25.0, 25.0,
-    25.0, 25.0, 25.0, 25.0, 25.0, // Legs
-    6.0,  2.0,  2.0,  2.0,  2.0,
-    2.0,  2.0,  2.0,  2.0, // Torso and arms
-    0.0};                  // Unused joint
-  
-  Vector20 tau_ff_{
-    0.0,  6.0, -8.0, -26.0, 36.0,
-    0.0, -6.0, -8.0, -26.0, 36.0,
-    0.0,  0.0,  0.0,  0.0,  0.0,
-    0.0,  0.0,  0.0,  0.0,
-    0.0};
-  
+  Vector20 q_init_;
+  Vector20 q_lim_lower_;
+  Vector20 q_lim_upper_;
+  Vector20 kp_;  
+  Vector20 kd_;
+  Vector20 kp_wait_;
+  Vector20 kd_wait_;
+  Vector20 tau_ff_;
   std::array<float, kNumMotors> tau_des_ = {};
   
   float time_ = 0.f;
@@ -284,16 +295,13 @@ public:
    */
   H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H1ConfigParameter> * mc_controller, mc_rbdyn::Robot * robot, const H1ConfigParameter & config_param);
   
-  /**
-   * @brief Interface constructor and destructor
-   * Running simulation only. No connection to real robot.
-   *
-   * @param config_param Configuration file parameters
-   * @param host "simulation" only
-   */
-  H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H1ConfigParameter> * mc_controller, mc_rbdyn::Robot * robot, const H1ConfigParameter & config_param, const std::string & host);
-  
   virtual ~H1Control();
+  
+  const H1ConfigParameter & config_;
+  
+  float time() { return time_; }
+  
+  float timeRun() { return time_run_; }
   
   const H1SensorInfo & getState() const { return stateIn_; }
   

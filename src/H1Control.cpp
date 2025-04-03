@@ -12,8 +12,21 @@ using namespace mc_unitree;
  * @param config_param Configuration file parameters
  */
 H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H1ConfigParameter> * mc_controller, mc_rbdyn::Robot * robot, const H1ConfigParameter & config_param)
-  : mc_controller_(mc_controller), robot_(robot), control_dt_(mc_controller->controller().timestep())
+  : mc_controller_(mc_controller), robot_(robot), control_dt_(mc_controller->controller().timestep()), config_(config_param)
 {
+  std::cout << "number of joints = " << robot_->refJointOrder().size() << std::endl;
+  std::cout << "control dt = " << control_dt_ << std::endl;
+  
+  // q_init, q_lim_lower, q_lim_upper will be overwritten by definition in mc_h1 and urdf
+  q_init_ = config_param.q_init_;
+  q_lim_lower_ = config_param.q_lim_lower_;
+  q_lim_upper_ = config_param.q_lim_upper_;
+  kp_ = config_param.kp_;
+  kd_ = config_param.kd_;
+  kp_wait_ = config_param.kp_stand_;
+  kd_wait_ = config_param.kd_stand_;
+  tau_ff_ = config_param.tau_ff_;
+  
   stateIn_.qIn_.resize(robot->refJointOrder().size(), 0.0);
   stateIn_.dqIn_.resize(robot->refJointOrder().size(), 0.0);
   stateIn_.tauIn_.resize(robot->refJointOrder().size(), 0.0);
@@ -44,6 +57,9 @@ H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H
     refJointOrderToMCJointId_[i] = mcJointId;
     mcJointIdToJointId_[mcJointId] = i;
     
+    q_lim_lower_(i) = robot->ql().at(i)[0];
+    q_lim_upper_(i) = robot->qu().at(i)[0];
+    
     /* Overrite initial q_init_ if stance is set */
     if(robot->stance().count(jname))
     {
@@ -51,101 +67,45 @@ H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H
     }
   }
   
-  /* Initialize */
-  unitree::robot::ChannelFactory::Instance()->Init(0, config_param.network_);
-  std::cout << "Initialize channel factory." << std::endl;
-  std::cout << "number of joints = " << robot_->refJointOrder().size() << std::endl;
-  std::cout << "control dt = " << control_dt_ << std::endl;
-  
-  lowcmd_publisher_.reset(
-    new unitree::robot::ChannelPublisher<unitree_go::msg::dds_::LowCmd_>(TOPIC_LOWCMD));
-  lowcmd_publisher_->InitChannel();
-  command_writer_ptr_ = unitree::common::CreateRecurrentThreadEx(
-    "command_writer", UT_CPU_ID_NONE, 2000, &H1Control::LowCommandWriter, this);
-  
-  lowstate_subscriber_.reset(
-    new unitree::robot::ChannelSubscriber<unitree_go::msg::dds_::LowState_>(TOPIC_LOWSTATE));
-  lowstate_subscriber_->InitChannel(
-    std::bind(&H1Control::LowStateHandler, this, std::placeholders::_1),
-    1);
-  
-#if defined(__ENABLE_RT_PREEMPT__)
-  pthread_create(&control_thread_, NULL,
-                 [](void* arg) -> void* {
-                   auto* ctrl = static_cast<H1Control::Control*>(arg);
-                   ctrl->Control();
-                   return nullptr;
-                 }, NULL);
-#else
-  int control_period_us = control_dt_ * 1e6;
-  control_thread_ptr_ = unitree::common::CreateRecurrentThreadEx(
-    "control", UT_CPU_ID_NONE, control_period_us, &H1Control::Control,
-    this);
-#endif
-  
-  int report_period_us = report_dt_ * 1e6;
-  report_sensor_ptr_ = unitree::common::CreateRecurrentThreadEx(
-    "report_sensor", UT_CPU_ID_NONE, report_period_us,
-    &H1Control::UpdateTables, this, false);
-  
-  // Initialize tables for console display
-  UpdateTables(true);
-  
-  // Initialize sink for data logging
-#if 0
-  fmtlog::setHeaderPattern("");
-  fmtlog::setLogFile(getCurrentDateTime());
-  fmtlog::setFlushDelay(100000000);
-  fmtlog::startPollingThread(100000000);
-#endif
-}
-
-/**
- * @brief Interface constructor and destructor
- * Running simulation only. No connection to real robot.
- *
- * @param config_param Configuration file parameters
- * @param host "simulation" only
- */
-H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H1ConfigParameter> * mc_controller, mc_rbdyn::Robot * robot, const H1ConfigParameter & config_param, const std::string & host)
-  : mc_controller_(mc_controller), robot_(robot), control_dt_(mc_controller->controller().timestep())
-{
-  std::cout << "number of joints = " << robot->refJointOrder().size() << std::endl;
-  std::cout << "control dt = " << control_dt_ << std::endl;
-  
-  stateIn_.qIn_.resize(robot_->refJointOrder().size(), 0.0);
-  stateIn_.dqIn_.resize(robot_->refJointOrder().size(), 0.0);
-  stateIn_.tauIn_.resize(robot_->refJointOrder().size(), 0.0);
-  stateIn_.rpyIn_.setZero();
-  stateIn_.quatIn_.setIdentity();
-  stateIn_.accIn_.setZero();
-  stateIn_.rateIn_.setZero();
-  
-  cmdOut_.qOut_.resize(robot_->refJointOrder().size(), 0.0);
-  cmdOut_.dqOut_.resize(robot_->refJointOrder().size(), 0.0);
-  cmdOut_.tauOut_.resize(robot_->refJointOrder().size(), 0.0);
-  cmdOut_.kpOut_.resize(robot_->refJointOrder().size(), 0.0);
-  cmdOut_.kdOut_.resize(robot_->refJointOrder().size(), 0.0);
-  
-  refJointOrderToMCJointId_.resize(kNumMotors, -1);
-  for (size_t i = 0 ; i < robot_->refJointOrder().size() ; i++)
+  if (!config_param.network_.empty())
   {
-    const std::string & jname = robot_->refJointOrder()[i];
-    auto mcJointId = robot->jointIndexByName(jname);
-    if (robot->mbc().q[mcJointId].empty())
-      continue;
+    /* Initialize */
+    unitree::robot::ChannelFactory::Instance()->Init(0, config_param.network_);
+    std::cout << "Initialize channel factory." << std::endl;
     
-    refJointOrderToMCJointId_[i] = mcJointId;
-    mcJointIdToJointId_[mcJointId] = i;
+    lowcmd_publisher_.reset(
+      new unitree::robot::ChannelPublisher<unitree_go::msg::dds_::LowCmd_>(TOPIC_LOWCMD));
+    lowcmd_publisher_->InitChannel();
+    command_writer_ptr_ = unitree::common::CreateRecurrentThreadEx(
+      "command_writer", UT_CPU_ID_NONE, 2000, &H1Control::LowCommandWriter, this);
+  
+    lowstate_subscriber_.reset(
+      new unitree::robot::ChannelSubscriber<unitree_go::msg::dds_::LowState_>(TOPIC_LOWSTATE));
+    lowstate_subscriber_->InitChannel(
+      std::bind(&H1Control::LowStateHandler, this, std::placeholders::_1),
+      1);
     
-    /* Overrite initial q_init_ if stance is set */
-    if(robot->stance().count(jname))
-    {
-      q_init_(i) = robot->stance().at(jname)[0];
-      
-      auto motorId = jointIdsToMotorIds[i];
-      std::cout << jname << ": init=" << q_init_(i) << ", idx=" << i << ", mcJointId=" << mcJointId << ", motorId=" << motorId << std::endl;
-    }
+#if defined(__ENABLE_RT_PREEMPT__)
+    pthread_create(&control_thread_, NULL,
+                   [](void* arg) -> void* {
+                     auto* ctrl = static_cast<H1Control::Control*>(arg);
+                     ctrl->Control();
+                     return nullptr;
+                   }, NULL);
+#else
+    int control_period_us = control_dt_ * 1e6;
+    control_thread_ptr_ = unitree::common::CreateRecurrentThreadEx(
+      "control", UT_CPU_ID_NONE, control_period_us, &H1Control::Control,
+      this);
+#endif
+    
+    int report_period_us = report_dt_ * 1e6;
+    report_sensor_ptr_ = unitree::common::CreateRecurrentThreadEx(
+      "report_sensor", UT_CPU_ID_NONE, report_period_us,
+      &H1Control::UpdateTables, this, false);
+    
+    // Initialize tables for console display
+    UpdateTables(true);
   }
 }
 
@@ -786,7 +746,7 @@ void H1Control::setInitialState(const std::map<std::string, std::vector<double>>
   {
     const std::string & jname = robot_->refJointOrder()[i];
     auto mcJointId = robot_->jointIndexByName(jname);
-    auto jointId = mcJointIdToJointId_[mcJointId];
+    auto jointId = mcJointIdToJointId(mcJointId);
     
     if(stance.count(jname))
     {

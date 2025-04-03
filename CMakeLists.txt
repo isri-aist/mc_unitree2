@@ -11,7 +11,6 @@ project(${PROJECT_NAME} LANGUAGES CXX VERSION 1.0.0)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/CMakeModules)
 
 # Import data tamer library
-#add_subdirectory(fmtlog)
 add_subdirectory(libfort)
 add_subdirectory(src)
 
