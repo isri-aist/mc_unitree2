@@ -24,69 +24,22 @@ $ make ; make install
 
 ```
 $ cd src
-$ git clone https://github.com/@MC_UNITREE@
-$ cd @MC_UNITREE_PATH@
+$ git clone https://github.com/mc_unitree2
 $ mkdir build
 $ cd build
 $ cmake ..
-$ make
-$ sudo make install
-```
-
-### The path set to the ROS library
-
-`MCControlUnitree2` will not pick up ROS libraries. If you're using `mc_rtc`'s ROS plugin, create a file with content: `/etc/ld.so.conf.d/ros.conf`
-```
-/opt/ros/${ROS_DISTRO}/lib
-```
-Run the following command after this change:
-```
-$ sudo ldconfig
+$ make ; make install
 ```
 
 ## 4. Usage
-To use the interface and connect to a real robot run
+Run the program:
 
 ```
-$ MCControlUnitree --help
-
- MCControlUnitree options:
-   --help                                display help message
-   -h [ --host ] arg (=go2/h1)           connection host, robot name or
-                                         "simulation"
-   -f [ --conf ] arg (=/usr/local/etc/mc_unitree/mc_rtc_go2.yaml)
-                                         configuration file
-
-$ MCControlUnitree -h <robot_hostname> -f <mc_rtc_configuration_file.conf>
+$ MCControlUnitree --conf <install path/etc/mc_unitree/mc_rtc.yaml> --network <name of network adaptor>
 ```
-
-Where <mc_rtc_configuration_file.yaml> is based on (e.g).
-
- `<INSTALL_PREFIX>/etc/mc_unitree/<robot>.yaml` --> `/usr/local/etc/mc_unitree/mc_rtc_go2.yaml`
-
-If you wish to run the simulation only use as a simulation (replace the `<robot_hostname>` with simulation)
-
-```
-$ MCControlUnitree -h simulation
-```
-
-Your mc_rtc configuration file (typically ) should contain the following lines: `/usr/local/etc/mc_unitree/mc_rtc_go2.yaml`
 
 ```
 # Interface specific parameters (mc_unitree)
 Unitree:
-  go2: # Name of the robot in the controller
-    network: eth0 # Name of network interface
-```
-
-Run the program:
-
-```
-$ MCControlUnitree2
-```
-
-You can also provide an additional configuration file (to swap between different network configurations easily for example):
-
-```
-$ MCControlUnitree2 -f conf.yaml
+  network-interface: # Name of network adaptor
 ```
