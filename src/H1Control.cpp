@@ -57,8 +57,8 @@ H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H
     refJointOrderToMCJointId_[i] = mcJointId;
     mcJointIdToJointId_[mcJointId] = i;
     
-    q_lim_lower_(i) = robot->ql().at(i)[0];
-    q_lim_upper_(i) = robot->qu().at(i)[0];
+    q_lim_lower_(i) = robot->ql().at(mcJointId)[0];
+    q_lim_upper_(i) = robot->qu().at(mcJointId)[0];
     
     /* Overrite initial q_init_ if stance is set */
     if(robot->stance().count(jname))
