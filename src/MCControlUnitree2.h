@@ -57,8 +57,6 @@ private:
   std::chrono::system_clock::time_point now_;
   
   mc_rtc::Logger & logger_;
-  double delay_;
-  bool controller_init_once_;
 };
 
 
@@ -66,8 +64,7 @@ template <typename RobotControl, typename RobotSensorInfo, typename RobotCommand
 MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigParameter>::MCControlUnitree2(mc_control::MCGlobalController & controller, const std::string & network)
   : globalController_(controller), network_(network),  robot_(nullptr),
     //logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc-unitree-"+controller.robot().name()),
-    logger_(controller.controller().logger()),
-    delay_(0.0), controller_init_once_(false)
+    logger_(controller.controller().logger())
 {
   // Get parameter values from the configuration file
   auto unitreeConfig = controller.configuration().config("Unitree");
@@ -227,10 +224,9 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
     }
     
     robot_->setInitialState(robot.stance());
-    while(controller.running)
-    {
-      run(stateIn, cmdOut);
-    }
+
+    run(stateIn, cmdOut);
+    
   }
   
   mc_rtc::log::info("[mc_unitree] interface initialized");
@@ -248,10 +244,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
 template <typename RobotControl, typename RobotSensorInfo, typename RobotCommandData, typename RobotConfigParameter>
 void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigParameter>::run(const RobotSensorInfo & state, RobotCommandData & cmdData)
 {
-  delay_ = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - now_).count();
-  now_ = std::chrono::high_resolution_clock::now();
-  
-  auto start_t_ = std::chrono::high_resolution_clock::now();
+  auto last_t = std::chrono::high_resolution_clock::now();
   
   /* Send sensor readings to mc_rtc controller */
   globalController_.setSensorOrientation(Eigen::Quaterniond(mc_rbdyn::rpyToMat(state.rpyIn_)));
@@ -260,9 +253,17 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
   globalController_.setEncoderValues(state.qIn_);
   globalController_.setEncoderVelocities(state.dqIn_);
   globalController_.setJointTorques(state.tauIn_);
+
+    /* Set up interface GUI tab */
+  globalController_.init(state.qIn_);
+  globalController_.controller().gui()->addElement(
+      {"Robot"}, mc_rtc::gui::Button("Stop controller", [&]() { this->globalController_.running = false; }));
   
-  if(globalController_.run())
-  {
+  /* Setup log entries */
+  //logger_.start(controller.current_controller(), controller.timestep());
+  addLogEntryRobotInfo();
+  
+  while (globalController_.running) {
     /* Update control value from the data in a robot */
     auto jsize = globalController_.controller().robots().robot().refJointOrder().size();
     for (size_t i = 0 ; i < jsize ; i++)
@@ -274,54 +275,36 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
       auto & robot = globalController_.controller().robots().robot();
       switch(config_param_.mode_)
       {
-      case mc_unitree::ControlMode::Position:
-        cmdData.qOut_[i] = robot.mbc().q[mcJointId][0];
-        cmdData.dqOut_[i] = robot.mbc().alpha[mcJointId][0];
-        break;
-      case mc_unitree::ControlMode::Velocity:
-        cmdData.dqOut_[i] = robot.mbc().alpha[mcJointId][0];
-        break;
-      case mc_unitree::ControlMode::Torque:
-        cmdData.tauOut_[i] = robot.mbc().jointTorque[mcJointId][0];
-        break;
+        case mc_unitree::ControlMode::Position:
+          cmdData.qOut_[i] = robot.mbc().q[mcJointId][0];
+          cmdData.dqOut_[i] = robot.mbc().alpha[mcJointId][0];
+          break;
+        case mc_unitree::ControlMode::Velocity:
+          cmdData.dqOut_[i] = robot.mbc().alpha[mcJointId][0];
+          break;
+        case mc_unitree::ControlMode::Torque:
+          cmdData.tauOut_[i] = robot.mbc().jointTorque[mcJointId][0];
+          break;
       }
     }
-    
+
     if(config_param_.network_.empty())
     {
       /* Loop back the value of "cmdOut" to "stateIn" */
       robot_->loopbackState(cmdData);
-    }
-  }
-  
-  if(!controller_init_once_)
-  {
-    /* Set up interface GUI tab */
-    globalController_.init(state.qIn_);
-    globalController_.controller().gui()->addElement(
-        {"Robot"}, mc_rtc::gui::Button("Stop controller", [&]() { this->globalController_.running = false; }));
-    
-    /* Setup log entries */
-    //logger_.start(controller.current_controller(), controller.timestep());
-    addLogEntryRobotInfo();
-    
-    controller_init_once_ = true;
-  }
-  
-  /* Wait until next controller run */
-  if(config_param_.network_.empty())
-  {
-    auto now = std::chrono::high_resolution_clock::now();
-    double elapsed = std::chrono::duration<double>(now - start_t_).count();
-    if(elapsed > globalController_.timestep() * 1000)
-    {
-      mc_rtc::log::warning(
-        "[mc_unitree] Loop time {} exeeded timestep of {} ms", elapsed, globalController_.timestep() * 1000);
-    }
-    else
-    {
-      std::this_thread::sleep_for(std::chrono::microseconds(
-          static_cast<unsigned int>((globalController_.timestep() * 1000 - elapsed)) * 1000));
+
+      auto now = std::chrono::high_resolution_clock::now();
+      double elapsed = std::chrono::duration<double>(now - last_t).count();
+      if(elapsed > globalController_.timestep() * 1000)
+      {
+        mc_rtc::log::warning(
+          "[mc_unitree] Loop time {} exeeded timestep of {} ms", elapsed, globalController_.timestep() * 1000);
+      
+
+        globalController_.run();
+
+        last_t = now;
+      }
     }
   }
   
@@ -416,7 +399,6 @@ template <typename RobotControl, typename RobotSensorInfo, typename RobotCommand
 {
   logger_.addLogEntry("time", [this]() { return robot_->time(); });
   logger_.addLogEntry("time_run", [this]() { return robot_->timeRun(); });
-  logger_.addLogEntry("delay", [this]() { return delay_; });
   
   /* Sensors */
   /* Position(Angle) values */
