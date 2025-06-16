@@ -4,8 +4,6 @@ Interface between [Unitree robots](https://github.com/unitreerobotics/unitree_ro
 ## 1. Required dependencies
 
  - [mc_rtc](https://jrl-umi3218.github.io/mc_rtc/)
- - [mc_go2_description](https://github.com/isri-aist/mc_go2_description)
- - [mc_go2](https://github.com/isri-aist/mc_go2)
  - [unitree_sdk2](https://github.com/unitreerobotics/unitree_sdk2)
 
 ## 2. Install dependencies
