@@ -3,6 +3,7 @@
 #include <mc_rtc/config.h>
 
 #include <fstream>
+#include <filesystem>
 #include <CLI/CLI.hpp>
 
 namespace
@@ -25,17 +26,20 @@ int main(int argc, char * argv[])
   /* Usage example: MCControlUnitree2 -n eth0 -f @ETC_PATH@/mc_unitree/mc_rtc_xxxxx.yaml */
   
   // Get the configuration file path dedicated to this program
-  std::string check_file = mc_unitree::CONFIGURATION_FILE;
+  fs::path config_path = mc_rtc::user_config_directory_path("mc_rtc.conf");
+  // Load user's local configuration if it exists
+  if(!fs::exists(config_path)) { config_path.replace_extension(".yaml"); }
+  std::string check_file = config_path.string();
   if(!file_exists(check_file))
   {
     check_file = "";
   }
   
   std::string conf_file = check_file;
-  std::string network = "lo";
+  std::string network;
   
   CLI::App app{"MCControlGo2 options"};
-  app.add_option("-n,--network", network, "Name of network adaptor")->default_val("lo");
+  app.add_option("-n,--network", network, "Name of network adaptor")->default_val("");
   app.add_option("-f,--conf", conf_file, "Configuration file")->default_val(check_file);
   
   /* Parse command line arguments */

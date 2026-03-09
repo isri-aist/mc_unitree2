@@ -48,7 +48,6 @@ if (GENERATE_GO2_CONTROLLER)
   add_executable(${GO2_CONTROLLER_NAME}
     ${SOURCES}
     ${GO2_SOURCES}
-    CLI11::CLI11
   )
   
   target_link_libraries(${GO2_CONTROLLER_NAME}
@@ -58,6 +57,7 @@ if (GENERATE_GO2_CONTROLLER)
     Boost::program_options
     unitree_sdk2
     fort
+    CLI11::CLI11
   )
   
   install(TARGETS ${GO2_CONTROLLER_NAME} DESTINATION bin)
