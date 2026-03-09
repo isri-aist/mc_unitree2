@@ -41,7 +41,6 @@ namespace mc_unitree
   constexpr double VelStopF = (16000.0f);
   
   const std::string ROBOT_NAME = "go2";
-  const std::string CONFIGURATION_FILE = "/usr/local/etc/mc_unitree/mc_rtc.yaml";
   
   const int jointIdsToMotorIds[12] =
     {JointIndex::FL_hip_joint,
@@ -69,11 +68,11 @@ struct Go2ConfigParameter
   /* Communication information with a real robot */
   /* Connection network */
   std::string network_;
-  /* ControlMode : Position/Velocity/Torque (Velocity and Torque are not supported)*/
+  /* ControlMode : Position/Velocity/Torque (Velocity is not supported)*/
   ControlMode mode_ = ControlMode::Position;
   
   // Default configuration
-  // This will be overwritten by stance defined in mc_h1
+  // This will be overwritten by stance defined in robot module
   Vector12 q_init_{
     0.0, 0.67, -1.3, // FL
     0.0, 0.67, -1.3, // FR
@@ -92,20 +91,26 @@ struct Go2ConfigParameter
     1.0472, 3.4907, -0.83776,
     1.0472, 3.4907, -0.83776,
   };
+  Vector12 qdot_lim_{
+    30.1, 30.1, 20.06,
+    30.1, 30.1, 20.06,
+    30.1, 30.1, 20.06,
+    30.1, 30.1, 20.06
+  };
   
   // Proportional derivative gains
   Vector12 kp_{
-    5.0, 5.0, 5.0,
-    5.0, 5.0, 5.0,
-    5.0, 5.0, 5.0,
-    5.0, 5.0, 5.0
+    20.0, 55.0, 55.0,
+    20.0, 55.0, 55.0,
+    20.0, 55.0, 55.0,
+    20.0, 55.0, 55.0
   };
   
   Vector12 kd_{
-    1.0, 1.0, 1.0,
-    1.0, 1.0, 1.0,
-    1.0, 1.0, 1.0,
-    1.0, 1.0, 1.0
+    2.0, 5.0, 5.0,
+    2.0, 5.0, 5.0,
+    2.0, 5.0, 5.0,
+    2.0, 5.0, 5.0
   }; 
   
   Vector12 kp_stand_{
@@ -192,14 +197,15 @@ protected:
   float control_dt_;
   
   control_status_t status_ = STATUS_INIT;
+  control_status_t prev_status_ = STATUS_RUN;
+
+  ControlMode mode_ = ControlMode::Position;
   
   MCControlUnitree2<Go2Control, Go2SensorInfo, Go2CommandData, Go2ConfigParameter> * mc_controller_ = nullptr;
   
   mc_rbdyn::Robot* robot_ = nullptr;
   
 private:
-  const Go2ConfigParameter & config_;
-  
   /*publisher*/
   unitree::robot::ChannelPublisherPtr<unitree_go::msg::dds_::LowCmd_> lowcmd_publisher_;
   /*subscriber*/
@@ -208,6 +214,10 @@ private:
   DataBuffer<MotorState> motor_state_buffer_;
   DataBuffer<MotorCommand> motor_command_buffer_;
   DataBuffer<BaseState> base_state_buffer_;
+
+  /*! Map from joint order to mc_rtc jointId, because mc_rtc jointId is not defined from 0 */
+  std::vector<int> refJointOrderToMCJointId_;
+  std::unordered_map<int, int> mcJointIdToJointId_;
   
   Vector12 q_init_;
   Vector12 q_lim_lower_;
@@ -216,8 +226,17 @@ private:
   Vector12 kd_;
   Vector12 kp_wait_;
   Vector12 kd_wait_;
+  Vector12 q_dot_lim_lower_;
+  Vector12 q_dot_lim_upper_;
   Vector12 tau_ff_;
   std::array<float, kNumMotors> tau_des_ = {};
+
+  std::vector<std::string> joint_names_ = {
+    "FR_hip_joint", "FR_thigh_joint", "FR_calf_joint",
+    "FL_hip_joint", "FL_thigh_joint", "FL_calf_joint",
+    "RR_hip_joint", "RR_thigh_joint", "RR_calf_joint",
+    "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint"
+  };
   
   float time_ = 0.f;
   float time_run_ = 0.f;
@@ -234,12 +253,6 @@ private:
   unitree::common::ThreadPtr control_thread_ptr_;
 #endif
   unitree::common::ThreadPtr report_sensor_ptr_;
-  
-  // Table for console display
-  fort::char_table table_IMU_;
-  fort::char_table table_legs_;
-  fort::char_table table_misc_;
-  fort::char_table table_legs_cmd_;
   
   /* Control loop status */
   bool running_ = false;
@@ -272,6 +285,8 @@ public:
   Go2Control(MCControlUnitree2<Go2Control, Go2SensorInfo, Go2CommandData, Go2ConfigParameter> * mc_controller, mc_rbdyn::Robot * robot, const Go2ConfigParameter & config_param);
   
   virtual ~Go2Control();
+
+  const Go2ConfigParameter & config_;
       
   float time() { return time_; }
   
@@ -285,17 +300,23 @@ public:
   
   float kp(int i) { return kp_[i]; }
   
-  void setKp(int i, float kp) { kp_[i] = kp; }
+  void setKp(int i, float kp) { kp_[i] = kp; cmdOut_.kpOut_[i] = kp; }
   
   const Vector12 & kd() const { return kd_; }
   
   float kd(int i) { return kd_[i]; }
   
-  void setKd(int i, float kd) { kd_[i] = kd; }
+  void setKd(int i, float kd) { kd_[i] = kd; cmdOut_.kdOut_[i] = kd; }
+
+  const std::vector<int> & refJointOrderToMCJointId() const { return refJointOrderToMCJointId_; }
   
-  int refJointOrderToMCJointId(int i) { return i; }
+  int refJointOrderToMCJointId(int i) { return refJointOrderToMCJointId_[i]; }
+
+  const std::unordered_map<int, int> & mcJointIdToJointId() const { return mcJointIdToJointId_; }
   
-  int mcJointIdToJointId(int i) { return i; }
+  int mcJointIdToJointId(int i) { return mcJointIdToJointId_[i]; }
+
+  void setControlMode(const std::string & mode);
   
   void LowCommandWriter();
   

@@ -1,4 +1,5 @@
 
+#include <mc_control/mc_global_controller.h>
 #include <mc_rtc/logging.h>
 #include "Go2Control.h"
 
@@ -14,27 +15,111 @@ using namespace mc_unitree;
 Go2Control::Go2Control(MCControlUnitree2<Go2Control, Go2SensorInfo, Go2CommandData, Go2ConfigParameter> * mc_controller, mc_rbdyn::Robot * robot, const Go2ConfigParameter & config_param)
   : mc_controller_(mc_controller), robot_(robot), control_dt_(mc_controller->controller().timestep()), config_(config_param)
 {
-  std::cout << "number of joints = " << robot_->refJointOrder().size() << std::endl;
-  std::cout << "control dt = " << control_dt_ << std::endl;
+  mc_rtc::log::info("[mc_unitree] Go2 Number of joints: {}", robot_->refJointOrder().size());
+  mc_rtc::log::info("[mc_unitree] Go2 Control dt: {}", control_dt_);
   
+  mc_control::MCGlobalController::GlobalConfiguration gconfig("", nullptr);
+  if(!gconfig.config.has("Unitree"))
+  {
+    mc_rtc::log::error_and_throw<std::runtime_error>("[mc_unitree] Missing Unitree configuration");
+  }
+  auto unitree_config = gconfig.config("Unitree");
+  if(!unitree_config.has("go2"))
+  {
+    mc_rtc::log::error_and_throw<std::runtime_error>("[mc_unitree] Missing Unitree Go2 configuration");
+  }
+  auto go2_config = unitree_config("go2");
   // q_init, q_lim_lower, q_lim_upper will be overwritten by definition in mc_h1 and urdf
-  q_init_ = config_param.q_init_;
-  q_lim_lower_ = config_param.q_lim_lower_;
-  q_lim_upper_ = config_param.q_lim_upper_;
-  kp_ = config_param.kp_;
-  kd_ = config_param.kd_;
-  kp_wait_ = config_param.kp_stand_;
-  kd_wait_ = config_param.kd_stand_;
-  tau_ff_ = config_param.tau_ff_;
-  
-  stateIn_.qIn_.resize(robot_->refJointOrder().size(), 0.0);
-  stateIn_.dqIn_.resize(robot_->refJointOrder().size(), 0.0);
-  stateIn_.tauIn_.resize(robot_->refJointOrder().size(), 0.0);
+  if(go2_config.has("q_init"))
+  {
+    Eigen::VectorXd q_init = go2_config("q_init");
+    if(q_init.size() != 12) q_init_ = config_param.q_init_;
+    else q_init_ = q_init.cast<float>();
+  }
+  else q_init_ = config_param.q_init_;
+
+  if(go2_config.has("q_lim_lower"))
+  {
+    Eigen::VectorXd q_lim_lower = go2_config("q_lim_lower");
+    if(q_lim_lower.size() != 12) q_lim_lower_ = config_param.q_lim_lower_;
+    else q_lim_lower_ = q_lim_lower.cast<float>();
+  }
+  else q_lim_lower_ = config_param.q_lim_lower_;
+
+  if(go2_config.has("q_lim_upper"))
+  {
+    Eigen::VectorXd q_lim_upper = go2_config("q_lim_upper");
+    if(q_lim_upper.size() != 12) q_lim_upper_ = config_param.q_lim_upper_;
+    else q_lim_upper_ = q_lim_upper.cast<float>();
+  }
+  else q_lim_upper_ = config_param.q_lim_upper_;
+
+  if(go2_config.has("qdot_lim"))
+  {
+    Eigen::VectorXd qdot_lim_upper = go2_config("qdot_lim");
+    Eigen::VectorXd qdot_lim_lower = -1.0 * qdot_lim_upper;
+    if(qdot_lim_upper.size() != 12){
+      q_dot_lim_upper_ = config_param.qdot_lim_;
+      q_dot_lim_lower_ = -1.0 * config_param.qdot_lim_;
+    }
+    else{
+      q_dot_lim_upper_ = qdot_lim_upper.cast<float>();
+      q_dot_lim_lower_ = qdot_lim_lower.cast<float>();
+    }
+  }
+  else {
+    q_dot_lim_lower_ = -1.0 * config_param.qdot_lim_;
+    q_dot_lim_upper_ = config_param.qdot_lim_;
+  }
+
+  if(go2_config.has("kp"))
+  {
+    Eigen::VectorXd kp = go2_config("kp");
+    if(kp.size() != 12) kp_ = config_param.kp_;
+    else kp_ = kp.cast<float>();
+  }
+  else kp_ = config_param.kp_;
+
+  if(go2_config.has("kd"))
+  {
+    Eigen::VectorXd kd = go2_config("kd");
+    if(kd.size() != 12) kd_ = config_param.kd_;
+    else kd_ = kd.cast<float>();
+  }
+  else kd_ = config_param.kd_;
+
+  if(go2_config.has("kp_wait"))
+  {
+    Eigen::VectorXd kp_wait = go2_config("kp_wait");
+    if(kp_wait.size() != 12) kp_wait_ = config_param.kp_stand_;
+    else kp_wait_ = kp_wait.cast<float>();
+  }
+  else kp_wait_ = config_param.kp_stand_;
+
+  if(go2_config.has("kd_wait"))
+  {
+    Eigen::VectorXd kd_wait = go2_config("kd_wait");
+    if(kd_wait.size() != 12) kd_wait_ = config_param.kd_stand_;
+    else kd_wait_ = kd_wait.cast<float>();
+  }
+  else kd_wait_ = config_param.kd_stand_;
+
+  if(go2_config.has("tau_ff"))
+  {
+    Eigen::VectorXd tau_ff = go2_config("tau_ff");
+    if(tau_ff.size() != 12) tau_ff_ = config_param.tau_ff_;
+    else tau_ff_ = tau_ff.cast<float>();
+  }
+  else tau_ff_ = config_param.tau_ff_;
+
+  stateIn_.qIn_.resize(robot->refJointOrder().size(), 0.0);
+  stateIn_.dqIn_.resize(robot->refJointOrder().size(), 0.0);
+  stateIn_.tauIn_.resize(robot->refJointOrder().size(), 0.0);
   stateIn_.rpyIn_.setZero();
   stateIn_.quatIn_.setIdentity();
   stateIn_.accIn_.setZero();
   stateIn_.rateIn_.setZero();
-  stateIn_.footForceIn_.resize(robot_->forceSensors().size(), 0.0);
+  stateIn_.footForceIn_.resize(robot->forceSensors().size(), 0.0);
   
   cmdOut_.qOut_.resize(robot->refJointOrder().size(), 0.0);
   cmdOut_.dqOut_.resize(robot->refJointOrder().size(), 0.0);
@@ -46,7 +131,7 @@ Go2Control::Go2Control(MCControlUnitree2<Go2Control, Go2SensorInfo, Go2CommandDa
     cmdOut_.kpOut_[i] = kp_[i];
     cmdOut_.kdOut_[i] = kd_[i];
   }
-  
+  refJointOrderToMCJointId_.resize(kNumMotors, -1);
   for (size_t i = 0 ; i < robot->refJointOrder().size() ; i++)
   {
     const std::string & jname = robot_->refJointOrder()[i];
@@ -54,23 +139,29 @@ Go2Control::Go2Control(MCControlUnitree2<Go2Control, Go2SensorInfo, Go2CommandDa
     if (robot->mbc().q[mcJointId].empty())
       continue;
     
-    q_lim_lower_(i) = robot->ql().at(i)[0];
-    q_lim_upper_(i) = robot->qu().at(i)[0];
-    
+    refJointOrderToMCJointId_[i] = mcJointId;
+    mcJointIdToJointId_[mcJointId] = i;
     /* Overrite initial q_init_ if stance is set */
-    if(robot->stance().count(jname))
+    if(robot->stance().count(jname) && !go2_config.has("q_init"))
     {
       q_init_(i) = robot->stance().at(jname)[0];
       auto motorId = jointIdsToMotorIds[i];
-      std::cout << jname << ": init=" << q_init_(i) << ", idx=" << i << ", mcJointId=" << mcJointId << ", motorId=" << motorId << std::endl;
+      mc_rtc::log::info("[mc_unitree] {}: init={}, idx={}, mcJointId={}, motorId={}", jname, q_init_(i), i, mcJointId, motorId);
     }
   }
-  
-  if (!config_param.network_.empty())
+
+  mode_ = config_param.mode_;
+
+  const std::string &network = config_param.network_;
+
+  if (!network.empty())
   {
+    int simulation = 1;
+    if(network != "lo") simulation = 0;
+    mc_rtc::log::info("[mc_unitree] Go2Control: Using network setting: {}", network);
     /* Initialize */
-    unitree::robot::ChannelFactory::Instance()->Init(0, config_param.network_);
-    std::cout << "Initialize channel factory." << std::endl;
+    unitree::robot::ChannelFactory::Instance()->Init(simulation, network);
+    mc_rtc::log::info("Initialize channel factory.");
     
     lowcmd_publisher_.reset(
       new unitree::robot::ChannelPublisher<unitree_go::msg::dds_::LowCmd_>(TOPIC_LOWCMD));
@@ -221,245 +312,75 @@ void Go2Control::ReportSensors()
     motor_state_buffer_.GetData();
   if (bs_tmp_ptr)
   {
-    // Roll Pitch Yaw orientation
-    std::cout << std::setprecision(4) << "rpy: [" << bs_tmp_ptr->rpy.at(0)
-              << ", " << bs_tmp_ptr->rpy.at(1) << ", " << bs_tmp_ptr->rpy.at(2)
-              << "]" << std::endl;
-    // Gyroscope
-    std::cout << std::setprecision(4) << "gyro: [" << bs_tmp_ptr->omega.at(0)
-              << ", " << bs_tmp_ptr->omega.at(1) << ", "
-              << bs_tmp_ptr->omega.at(2) << "]" << std::endl;
-    // Accelerometer
-    std::cout << std::setprecision(4) << "acc: [" << bs_tmp_ptr->acc.at(0)
-              << ", " << bs_tmp_ptr->acc.at(1) << ", " << bs_tmp_ptr->acc.at(2)
-              << "]" << std::endl;
+    mc_rtc::log::info("Base RPY: [{:.4f}, {:.4f}, {:.4f}]",
+                      bs_tmp_ptr->rpy.at(0),
+                      bs_tmp_ptr->rpy.at(1),
+                      bs_tmp_ptr->rpy.at(2));
+    mc_rtc::log::info("Gyro: [{:.4f}, {:.4f}, {:.4f}]",
+                      bs_tmp_ptr->omega.at(0),
+                      bs_tmp_ptr->omega.at(1),
+                      bs_tmp_ptr->omega.at(2));
+    mc_rtc::log::info("Accelerometer: [{:.4f}, {:.4f}, {:.4f}]",
+                      bs_tmp_ptr->acc.at(0),
+                      bs_tmp_ptr->acc.at(1),
+                      bs_tmp_ptr->acc.at(2));
   }
   if (ms_tmp_ptr)
   {
-    // Joint positions
-    std::cout << "mot_pos: [";
+    mc_rtc::log::info("mot_pos: [");
     for (size_t i = 0; i < robot_->refJointOrder().size(); ++i)
     {
-      std::cout << std::setprecision(4) << ms_tmp_ptr->q.at(jointIdsToMotorIds[i]) << ", ";
+      mc_rtc::log::info("{:.4f}, ", ms_tmp_ptr->q.at(jointIdsToMotorIds[i]));
     }
-    std::cout << "]" << std::endl;
-    
-    // Joint velocities
-    std::cout << "mot_vel: [";
+    mc_rtc::log::info("]");
+    mc_rtc::log::info("mot_vel: [");
     for (size_t i = 0; i < robot_->refJointOrder().size(); ++i)
     {
-      std::cout << std::setprecision(4) << ms_tmp_ptr->dq.at(jointIdsToMotorIds[i]) << ", ";
+      mc_rtc::log::info("{:.4f}, ", ms_tmp_ptr->dq.at(jointIdsToMotorIds[i]));
     }
-    std::cout << "]" << std::endl;
+    mc_rtc::log::info("]");
   }
 }
 
 void Go2Control::UpdateTables(bool init)
 {
-  // Clear the console
-  std::cout << u8"\033[2J";
-  
-  if (init)
+  if (status_ != prev_status_)
   {
-    // Set tables border style
-    table_IMU_.set_border_style(FT_NICE_STYLE);
-    table_legs_.set_border_style(FT_NICE_STYLE);
-    table_legs_cmd_.set_border_style(FT_NICE_STYLE);
-    table_misc_.set_border_style(FT_NICE_STYLE);
-    
-    // Initialize headers
-    table_IMU_.set_cur_cell(0, 0);
-    table_legs_.set_cur_cell(0, 0);
-    table_legs_cmd_.set_cur_cell(0, 0);
-    table_misc_.set_cur_cell(0, 0);
-    table_IMU_ << fort::header << ""
-               << "X"
-               << "Y"
-               << "Z" << fort::endr;
-    table_legs_ << fort::header << ""
-                << "L Yaw"
-                << "L Roll"
-                << "L Pitch"
-                << "L Knee"
-                << "L Ank";
-    table_legs_ << "R Yaw"
-                << "R Roll"
-                << "R Pitch"
-                << "R Knee"
-                << "R Ank" << fort::endr;
-    table_legs_cmd_ << fort::header << ""
-                    << "L Yaw"
-                    << "L Roll"
-                    << "L Pitch"
-                    << "L Knee"
-                    << "L Ank";
-    table_legs_cmd_ << "R Yaw"
-                    << "R Roll"
-                    << "R Pitch"
-                    << "R Knee"
-                    << "R Ank" << fort::endr;
-    table_misc_ << fort::header << ""
-                << "VX"
-                << "VY"
-                << "WZ" << fort::endr;
-  }
-  
-  // Fill tables with data
-  const std::shared_ptr<const BaseState> bs_tmp_ptr =
-    base_state_buffer_.GetData();
-  const std::shared_ptr<const MotorState> ms_tmp_ptr =
-    motor_state_buffer_.GetData();
-  
-  // Set current cell to start of second row
-  table_IMU_.set_cur_cell(1, 0);
-  table_legs_.set_cur_cell(1, 0);
-  table_legs_cmd_.set_cur_cell(1, 0);
-  table_misc_.set_cur_cell(1, 0);
-  
-  // Fill IMU data
-  if (bs_tmp_ptr)
-  {
-    table_IMU_ << "RPY";
-    for (int i = 0; i < 3; ++i)
+    prev_status_ = status_;
+    switch (status_)
     {
-      table_IMU_ << std::fixed << std::setprecision(4) << bs_tmp_ptr->rpy.at(i);
-    }
-    table_IMU_ << fort::endr << fort::separator << "Gyro";
-    for (int i = 0; i < 3; ++i)
-    {
-      table_IMU_ << std::fixed << std::setprecision(4)
-                 << bs_tmp_ptr->omega.at(i);
-    }
-    table_IMU_ << fort::endr << fort::separator << "Acc";
-    for (int i = 0; i < 3; ++i)
-    {
-      table_IMU_ << std::fixed << std::setprecision(4) << bs_tmp_ptr->acc.at(i);
+      case STATUS_INIT:
+        mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+        mc_rtc::log::info("    ┃      Initialization      ┃");
+        mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+        break;
+      case STATUS_WAITING_AIR:
+        mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+        mc_rtc::log::info("    ┃    Waiting in the air    ┃");
+        mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+        break;
+      case STATUS_WAITING_GRD:
+        mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+        mc_rtc::log::info("    ┃   Waiting on the ground  ┃");
+        mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+        break;
+      case STATUS_GAIN_TRANSITION:
+        mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+        mc_rtc::log::info("    ┃   PD Gains Transition    ┃");
+        mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+        break;
+      case STATUS_RUN:
+        mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+        mc_rtc::log::info("    ┃    Running Controller    ┃");
+        mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+        break;
+      case STATUS_DAMPING:
+        mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+        mc_rtc::log::info("    ┃    Emergency Damping!    ┃");
+        mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+        break;
     }
   }
-  
-  // Fill joint data
-  if (ms_tmp_ptr)
-  {
-    table_legs_ << "Pos";
-    for (int i = 0; i < 12; ++i)
-    {
-      table_legs_ << std::fixed << std::setprecision(4)
-                  << ms_tmp_ptr->q.at(jointIdsToMotorIds[i]);
-    }
-    table_legs_ << fort::endr << fort::separator << "Vel";
-    for (int i = 0; i < 12; ++i)
-    {
-      table_legs_ << std::fixed << std::setprecision(4)
-                  << ms_tmp_ptr->dq.at(jointIdsToMotorIds[i]);
-    }
-    table_legs_ << fort::endr << fort::separator << "Torques";
-    for (int i = 0; i < 12; ++i)
-    {
-      table_legs_ << std::fixed << std::setprecision(4)
-                  << ms_tmp_ptr->tau.at(jointIdsToMotorIds[i]); // tau_des_[i];
-    }
-    table_legs_ << fort::endr;
-  }
-  
-  const std::shared_ptr<const MotorCommand> mc_tmp_ptr =
-    motor_command_buffer_.GetData();
-  if (mc_tmp_ptr)
-  {
-    table_legs_cmd_ << "PosCmd";
-    for (int i = 0; i < 12; ++i)
-    {
-      table_legs_cmd_ << std::fixed << std::setprecision(4)
-                      << mc_tmp_ptr->q_ref.at(jointIdsToMotorIds[i]);
-    }
-    table_legs_cmd_ << fort::endr;
-  }
-  
-  if (init)
-  {
-    // Set text style
-    table_IMU_.row(0).set_cell_content_text_style(fort::text_style::bold);
-    table_IMU_.column(0).set_cell_content_text_style(fort::text_style::bold);
-    table_legs_.column(0).set_cell_content_text_style(fort::text_style::bold);
-    table_legs_cmd_.column(0).set_cell_content_text_style(fort::text_style::bold);
-    table_misc_.row(0).set_cell_content_text_style(fort::text_style::bold);
-    table_misc_.column(0).set_cell_content_text_style(fort::text_style::bold);
-    
-    // Set alignment
-    table_IMU_.column(0).set_cell_text_align(fort::text_align::center);
-    for (int i = 1; i < 4; ++i)
-    {
-      table_IMU_.column(i).set_cell_text_align(fort::text_align::right);
-      table_IMU_.column(i).set_cell_min_width(11);
-    }
-    table_IMU_[0][1].set_cell_text_align(fort::text_align::center);
-    table_IMU_[0][2].set_cell_text_align(fort::text_align::center);
-    table_IMU_[0][3].set_cell_text_align(fort::text_align::center);
-    
-    table_legs_.column(0).set_cell_text_align(fort::text_align::center);
-    for (int i = 1; i < 13; ++i)
-    {
-      table_legs_.column(i).set_cell_text_align(fort::text_align::right);
-      table_legs_.column(i).set_cell_min_width(9);
-    }
-    table_legs_cmd_.column(0).set_cell_text_align(fort::text_align::center);
-    for (int i = 1; i < 13; ++i)
-    {
-      table_legs_cmd_.column(i).set_cell_text_align(fort::text_align::right);
-      table_legs_cmd_.column(i).set_cell_min_width(9);
-    }
-    
-    table_misc_.column(0).set_cell_text_align(fort::text_align::center);
-    for (int i = 1; i < 4; ++i)
-    {
-      table_misc_.column(i).set_cell_text_align(fort::text_align::right);
-      table_misc_.column(i).set_cell_min_width(9);
-    }
-    table_misc_[0][1].set_cell_text_align(fort::text_align::center);
-    table_misc_[0][2].set_cell_text_align(fort::text_align::center);
-    table_misc_[0][3].set_cell_text_align(fort::text_align::center);
-  }
-  
-  switch (status_)
-  {
-  case STATUS_INIT:
-    std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    std::cout << "    ┃      Initialization      ┃" << std::endl;
-    std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-    break;
-  case STATUS_WAITING_AIR:
-    std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    std::cout << "    ┃    Waiting in the air    ┃" << std::endl;
-    std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-    break;
-  case STATUS_WAITING_GRD:
-    std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    std::cout << "    ┃   Waiting on the ground  ┃" << std::endl;
-    std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-    break;
-  case STATUS_GAIN_TRANSITION:
-    std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    std::cout << "    ┃   PD Gains Transition    ┃" << std::endl;
-    std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-    break;
-  case STATUS_RUN:
-    std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    std::cout << "    ┃    Running Controller    ┃" << std::endl;
-    std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-    break;
-  case STATUS_DAMPING:
-    std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    std::cout << "    ┃    Emergency Damping!    ┃" << std::endl;
-    std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-    break;
-  }
-  std::cout << "    ┏━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-  std::cout << "    ┃    Sensor Data    ┃" << std::endl;
-  std::cout << "    ┗━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-  std::cout << table_IMU_.to_string() << std::endl;
-  std::cout << table_legs_cmd_.to_string() << std::endl;
-  std::cout << table_legs_.to_string() << std::endl;
-  std::cout << table_misc_.to_string() << std::endl;
-  std::cout << "Time: " << time_ << std::endl;
 }
 
 void Go2Control::Control()
@@ -517,31 +438,8 @@ void Go2Control::Control()
   // Check if joints are too close from position limits
   const bool lim_lower = ((q_pos - 0.85 * q_lim_lower_).array() < 0.0).any();
   const bool lim_upper = ((q_pos - 0.85 * q_lim_upper_).array() > 0.0).any();
-  if (lim_lower || lim_upper)
-  {
-    if (lim_lower)
-    {
-      std::cout << "Joint lower limit breached!!!" << std::endl;
-      std::cout << "POS: " << std::fixed << std::setprecision(4) << q_pos.transpose() << std::endl;
-      std::cout << "LIM: " << std::fixed << std::setprecision(4) << (0.85 * q_lim_lower_).transpose() << std::endl;
-    }
-    if (lim_upper)
-    {
-      std::cout << "Joint upper limit breached!!!" << std::endl;
-      std::cout << "POS: " << std::fixed << std::setprecision(4) << q_pos.transpose() << std::endl;
-      std::cout << "LIM: " << std::fixed << std::setprecision(4) << (0.85 * q_lim_upper_).transpose() << std::endl;
-    }
-    status_ = STATUS_DAMPING;
-  }
-  
-  // Check if joint velocities are too high
-  const bool lim_velocity = ((q_vel.array().abs() - 8) > 0.0).any();
-  if (lim_velocity)
-  {
-    std::cout << "Velocity threshold breached!!!" << std::endl;
-    std::cout << "VEL: " << std::fixed << std::setprecision(4) << q_vel.transpose() << std::endl;
-    status_ = STATUS_DAMPING;
-  }
+  const bool lim_velocity_lower = ((q_vel - 0.85 * q_dot_lim_lower_).array() < 0.0).any();
+  const bool lim_velocity_upper = ((q_vel - 0.85 * q_dot_lim_upper_).array() > 0.0).any();
   
   // Switch to waiting after initialization
   if ((status_ == STATUS_INIT) && (time_ > init_duration_))
@@ -555,20 +453,102 @@ void Go2Control::Control()
   {
   case STATUS_RUN:
   {
+    // If limits are breached, go to damping mode
+    if (lim_lower || lim_upper || lim_velocity_lower || lim_velocity_upper)
+    {
+      const int n = joint_names_.size();
+      if (lim_lower)
+      {
+        mc_rtc::log::error("[mc_unitree] Joint lower position limit breached!");
+        for(int i = 0; i < n; ++i)
+        {
+          if(q_pos[i] < q_lim_lower_[i])
+          {
+            mc_rtc::log::error("  - {}: pos = {}, lower limit = {}", 
+                              joint_names_[i], q_pos[i], q_lim_lower_[i]);
+          }
+        }
+      }
+
+      if (lim_upper)
+      {
+        mc_rtc::log::error("[mc_unitree] Joint upper position limit breached!");
+        for(int i = 0; i < n; ++i)
+        {
+          if(q_pos[i] > q_lim_upper_[i])
+          {
+            mc_rtc::log::error("  - {}: pos = {}, upper limit = {}", 
+                              joint_names_[i], q_pos[i], q_lim_upper_[i]);
+          }
+        }
+      }
+
+      if (lim_velocity_lower)
+      {
+        mc_rtc::log::error("[mc_unitree] Joint lower velocity limit breached!");
+        for(int i = 0; i < n; ++i)
+        {
+          if(q_vel[i] < q_dot_lim_lower_[i])
+          {
+            mc_rtc::log::error("  - {}: vel = {}, lower vel limit = {}", 
+                              joint_names_[i], q_vel[i], q_dot_lim_lower_[i]);
+          }
+        }
+      }
+
+      if (lim_velocity_upper)
+      {
+        mc_rtc::log::error("[mc_unitree] Joint upper velocity limit breached!");
+        for(int i = 0; i < n; ++i)
+        {
+          if(q_vel[i] > q_dot_lim_upper_[i])
+          {
+            mc_rtc::log::error("  - {}: vel = {}, upper vel limit = {}", 
+                              joint_names_[i], q_vel[i], q_dot_lim_upper_[i]);
+          }
+        }
+      }
+
+      status_ = STATUS_DAMPING;
+    }
+
+    auto &datastore = mc_controller_->controller().controller().datastore();
+    if (datastore.has("ControlMode"))
+    {
+      setControlMode(datastore.get<std::string>("ControlMode"));
+    }
+
     time_run_ += control_dt_;
     
     mc_controller_->run(stateIn_, cmdOut_);
     
     // Send commands to the robot
-    for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
+    if(mode_ == ControlMode::Position)
     {
-      auto motorId = jointIdsToMotorIds[i];
-      motor_command_tmp.kp.at(motorId) = cmdOut_.kpOut_[i];
-      motor_command_tmp.kd.at(motorId) = cmdOut_.kdOut_[i];
-      motor_command_tmp.q_ref.at(motorId) = cmdOut_.qOut_[i];
-      motor_command_tmp.dq_ref.at(motorId) = cmdOut_.dqOut_[i];
-      motor_command_tmp.tau_ff.at(motorId) = cmdOut_.tauOut_[i];
+      for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
+      {
+        auto motorId = jointIdsToMotorIds[i];
+        motor_command_tmp.kp.at(motorId) = cmdOut_.kpOut_[i];
+        motor_command_tmp.kd.at(motorId) = cmdOut_.kdOut_[i];
+        motor_command_tmp.q_ref.at(motorId) = cmdOut_.qOut_[i];
+        motor_command_tmp.dq_ref.at(motorId) = cmdOut_.dqOut_[i];
+        motor_command_tmp.tau_ff.at(motorId) = 0.f;
+      }
+      break;
     }
+    else if(mode_ == ControlMode::Torque)
+    {
+      for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
+      {
+        auto motorId = jointIdsToMotorIds[i];
+        motor_command_tmp.kp.at(motorId) = 0.f;
+        motor_command_tmp.kd.at(motorId) = 0.f;
+        motor_command_tmp.tau_ff.at(motorId) = cmdOut_.tauOut_[i];
+      }
+      break;
+    }
+    mc_rtc::log::error("[mc_unitree] Unknown control mode!");
+    status_ = STATUS_DAMPING;
     break;
   }
   
@@ -597,7 +577,7 @@ void Go2Control::Control()
       motor_command_tmp.kd.at(motorId) = kd_wait_(i);
       motor_command_tmp.q_ref.at(motorId) = q_init_(i);
       motor_command_tmp.dq_ref.at(motorId) = 0.f;
-      motor_command_tmp.tau_ff.at(motorId) = tau_ff_(i) * 0.0;
+      motor_command_tmp.tau_ff.at(motorId) = 0.f;
     }
     break;
   }
@@ -734,5 +714,20 @@ void Go2Control::loopbackState(const Go2CommandData & data)
       stateIn_.qIn_[i] = robot_->qu()[i][0];
     else if (stateIn_.qIn_[i] < robot_->ql()[i][0])
       stateIn_.qIn_[i] = robot_->ql()[i][0];
+  }
+}
+
+void Go2Control::setControlMode(const std::string &mode)
+{
+  if (mode.compare("Position") == 0) {
+    mode_ = ControlMode::Position;
+    return;
+  }
+  else if (mode.compare("Torque") == 0) {
+   mode_ = ControlMode::Torque;
+   return;
+  }
+  else {
+    mc_rtc::log::error("{} ControlMode not supported", mode);
   }
 }
