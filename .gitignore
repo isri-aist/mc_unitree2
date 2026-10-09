@@ -3,3 +3,10 @@
 
 # cpp
 build
+
+# gui
+imgui.ini
+
+# nix
+result
+.direnv/
